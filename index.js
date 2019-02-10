@@ -1,14 +1,68 @@
 const fs = require("fs");
-const { Transform } = require('stream');
+const { Transform, Writable } = require('stream');
 const { StringDecoder } = require('string_decoder');
+
+const net = require('net');
 
 const file = "data.txt";
 
-class StringTransform extends Transform {
+const pool = {
+    specs: [
+        {
+            hostname: '127.0.0.1',
+            port: 1337,
+            lastHealthCheck: 0,
+            socket: null,
+        },
+    ],
+    init: function (index) {
+        this.servers[index].socket = new net.Socket();
+        this.servers[index].socket.connect(
+            this.servers[index].port,
+            this.servers[index].hostname,
+            () => {
+                console.log('Connected');
+            },
+        );
+
+        this.servers[index].socket.on('data', (data) => {
+            console.log('Received: ' + data);
+            // client.destroy();
+        });
+
+        this.servers[index].socket.on('close', () => {
+            console.log('Connection closed');
+            this.servers[index].socket = null;
+        });
+    },
+    sendData: function (index, data) {
+        this.servers[index].socket.write(data);
+    }
+}
+
+pool.init();
+pool.sendData("TEST");
+
+class StringToLinesTransform extends Transform {
     constructor(options) {
-      super(options);
-      this._decoder = new StringDecoder(options && options.defaultEncoding);
-      this.data = '';
+        super(options);
+        this._decoder = new StringDecoder(options && options.defaultEncoding);
+        this.cacheStr = '';
+    }
+
+    pushData(str) {
+        const data = this.cacheStr + str;
+        const chunks = data.split("\n");
+
+        for (let i = 0; i < chunks.length - 1; i++) {
+            this.push(chunks[i]);
+        }
+
+        if (chunks[chunks.length - 1]) {
+            this.cacheStr = chunks[chunks.length - 1];
+        } else {
+            this.cacheStr = "";
+        }
     }
 
     _transform(chunk, encoding, callback) {
@@ -20,53 +74,66 @@ class StringTransform extends Transform {
             data = chunk;
         }
 
-        // this.data += data;
-        console.log(`%${data}%`);
+        this.pushData(data);
 
-        // this.push(data + "hkjh");
-        callback(null, data + "hkjh");
-    //   this[kSource].fetchSomeData(size, (data, encoding) => {
-    //     this.push(Buffer.from(data, encoding));
-    //   });
+        callback();
     }
 
     _final(callback) {
         let data = this._decoder.end();
-        this.push(data);
+        this.pushData(data);
+        this.push(this.cacheStr);
+        callback();
+    }
+}
+
+
+class SendToProcessWritable extends Writable {
+    constructor(options) {
+        super(options);
+        this._decoder = new StringDecoder(options && options.defaultEncoding);
+        this._pool = options && options.pool;
+    }
+
+    _write(bytes, encoding, callback) {
+        let chunk;
+
+        if (encoding === 'buffer') {
+            chunk = this._decoder.write(bytes);
+        } else {
+            chunk = bytes;
+        }
+
+        if (chunk) {
+            this._pool.sendData(0, chunk);
+        }
+
         callback();
     }
 
-    // _read(size) {
-    // //   this[kSource].fetchSomeData(size, (data, encoding) => {
-    // //     this.push(Buffer.from(data, encoding));
-    // //   });
-    // }
+    _final(callback) {
+        const chunk = this._decoder.end();
 
-    // _write(chunk, encoding, callback) {
-    //   if (encoding === 'buffer') {
-    //     chunk = this._decoder.write(chunk);
-    //   }
-    //   this.data += chunk;
-    //   console.log(`%${chunk}%`)
-    //   callback();
-    // }
+        if (chunk) {
+            this._pool.sendData(0, chunk);
+        }
 
-    // _final(callback) {
-    //   this.data += this._decoder.end();
-    //   callback();
-    // }
-  }
-  
+        callback();
+    }
+}
 
-const myTransform = new StringTransform();
-const myTransform2 = new StringTransform();
+
+const stringToLinesStream = new StringToLinesTransform();
+const sendToProcessStream = new SendToProcessWritable({
+    pool,
+});
 
 const readFile = fs.createReadStream(file, { encoding: "utf8" })
 
-readFile.pipe(myTransform);
-myTransform.pipe(myTransform2);
+readFile.pipe(stringToLinesStream);
+stringToLinesStream.pipe(sendToProcessStream);
 
-myTransform2.on("data", data => {
+stringToLinesStream.on("data", data => {
     console.log("data", data.toString());
 })
 .on("end", () => {
