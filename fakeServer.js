@@ -1,6 +1,6 @@
-const {serverFactory} = require("./server.js");
+const {ServerFactory} = require("./ServerFactory.js");
 
-serverFactory({
+ServerFactory({
     port: 1337,
     hostname: '0.0.0.0',
     prepare: (socket) => {

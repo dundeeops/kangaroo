@@ -2,6 +2,7 @@ const net = require('net');
 
 module.exports = class ServerConnection {
     constructor(options) {
+        this.name = options.name;
         this.hostname = options.hostname;
         this.port = options.port;
     }

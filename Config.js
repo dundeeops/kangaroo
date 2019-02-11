@@ -1,12 +1,22 @@
 const fs = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
+const argv = require('yargs').argv;
 
-const readConfig = () => yaml.safeLoad(
-    fs.readFileSync(
-        path.resolve("./config.yml"),
-        "utf8"
-    )
-);
+const readConfig = () => {
+    const yamlConfig = yaml.safeLoad(
+        fs.readFileSync(
+            path.resolve(argv.config || "./config.yml"),
+            "utf8"
+        )
+    );
 
-module.exports = config = reaadConfig();
+    const name = argv.name || yamlConfig.name;
+
+    return {
+        ...yamlConfig,
+        name,
+    }
+};
+
+module.exports = config = readConfig();

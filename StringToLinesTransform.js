@@ -1,14 +1,14 @@
-const { Transform } = require('stream');
-const { StringDecoder } = require('string_decoder');
+const { Transform } = require("stream");
+const { StringDecoder } = require("string_decoder");
 
 module.exports = class StringToLinesTransform extends Transform {
     constructor(options) {
         super(options);
         this._decoder = new StringDecoder(options && options.defaultEncoding);
-        this.cacheStr = '';
+        this.cacheStr = "";
     }
 
-    pushData(str) {
+    sendData(str) {
         const data = this.cacheStr + str;
         const chunks = data.split("\n");
 
@@ -26,20 +26,20 @@ module.exports = class StringToLinesTransform extends Transform {
     _transform(chunk, encoding, callback) {
         let data;
 
-        if (encoding === 'buffer') {
+        if (encoding === "buffer") {
             data = this._decoder.write(chunk);
         } else {
             data = chunk;
         }
 
-        this.pushData(data);
+        this.sendData(data);
 
         callback();
     }
 
     _final(callback) {
         let data = this._decoder.end();
-        this.pushData(data);
+        this.sendData(data);
         this.push(this.cacheStr);
         callback();
     }
