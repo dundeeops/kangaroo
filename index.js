@@ -87,8 +87,8 @@ mapReduceWorker.setMap("final", (key) => {
 
             // process.exit();
 
-            rl.question("Run again? [y/n]: ", (answer) => {
-                if (answer === "y") {
+            rl.question("\n", (answer) => {
+                if (answer === "r") {
                     run();
                 } else {
                     rl.close();
