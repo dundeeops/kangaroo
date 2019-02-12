@@ -8,14 +8,17 @@ module.exports = class StringToLinesTransform extends Transform {
         this.cacheStr = "";
     }
 
+    cleanString(str) {
+        return str.replace(/(\n|\r)$/, '').trim();
+    }
+
     sendData(str) {
         const data = this.cacheStr + str;
         const chunks = data.split("\n");
-console.log(chunks);
 
         for (let i = 0; i < chunks.length - 1; i++) {
             if (chunks[i]) {
-                this.push(chunks[i]);
+                this.push(this.cleanString(chunks[i]));
             }
         }
 
@@ -41,13 +44,12 @@ console.log(chunks);
     }
 
     _final(callback) {
-        let data = this._decoder.end();
+        const data = this._decoder.end();
         this.sendData(data);
-        if (this.cacheStr) {
-            console.log("cahched", this.cacheStr);
-            this.push(this.cacheStr);
+        const str = this.cleanString(this.cacheStr);
+        if (str) {
+            this.push(str);
         }
-        console.log("closed", this.cacheStr);
         callback();
     }
 }

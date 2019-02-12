@@ -18,6 +18,7 @@ module.exports = class SendToProcessWritable extends Writable {
         } else {
             chunk = bytes;
         }
+        
         if (chunk) {
             this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
         }
@@ -29,6 +30,7 @@ module.exports = class SendToProcessWritable extends Writable {
         if (chunk) {
             this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
         }
+        
         this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, null);
         callback();
     }

@@ -29,7 +29,6 @@ module.exports = class ServerEntry {
 
             this._server.on("end", () => {
                 r();
-                console.log("The server has stopped");
             });
         });
     }

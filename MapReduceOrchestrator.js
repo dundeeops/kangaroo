@@ -102,8 +102,6 @@ module.exports = class MapReduceOrchestrator {
                 const raw = chunk.toString();
                 const { stage, key, data } = mapReduceOrchestrator.deserializeData(raw);
                 const stream = mapReduceOrchestrator.getStageKeyStream(stage, key);
-                console.log("ch", stage, key, data);
-                
                 stream.push(data);
                 callback();
             },
@@ -122,7 +120,6 @@ module.exports = class MapReduceOrchestrator {
                 read() {
                 },
                 final(callback) {
-                    console.log("close");
                     delete mapReduceOrchestrator._stageKeyStreamMap[hash];
                     callback();
                 }
@@ -181,8 +178,6 @@ module.exports = class MapReduceOrchestrator {
         this.setNextServer(nextServerName, stage, key);
         const server = this._serverPool.getServer(nextServerName);
         const raw = this.serializeData(stage, key, data);
-        console.log("sending", raw);
-        
         server.sendData(raw + "\n");
     }
 }
