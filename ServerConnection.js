@@ -22,9 +22,10 @@ module.exports = class ServerConnection {
 
     onError(error) {
         console.error(`Connection failed ${this._name}`, error.message, error.stack);
-        this._socket = null;
-        this._isConnecting = false;
-        this.startReconnection();
+        if (!this._socket) {
+            this._isConnecting = false;
+            this.startReconnection();
+        }
     }
 
     getName() {

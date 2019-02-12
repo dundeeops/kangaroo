@@ -2,7 +2,7 @@ const { Readable } = require("stream");
 const net = require("net");
 const domain = require("domain");
 
-const RESTART_TIMEOUT = 500;
+const RESTART_TIMEOUT = 50000;
 
 module.exports = class ServerEntry {
     constructor(options) {
@@ -21,9 +21,10 @@ module.exports = class ServerEntry {
 
     onError(error) {
         console.error(`Worker failed ${this._name}`, error.message, error.stack);
-        this._server = null;
-        this._isStarting = false;
-        this.startRestart();
+        if (!this._server) {
+            this._isStarting = false;
+            this.startRestart();
+        }
     }
 
     getName() {

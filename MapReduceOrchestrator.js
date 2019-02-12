@@ -1,8 +1,11 @@
-const { pipeline, Writable, Readable } = require("stream");
+const { pipeline, Transform, Writable, Readable } = require("stream");
 const crypto = require("crypto");
-const safeStringify = require("fast-safe-stringify");
 const SendToProcessWritable = require("./SendToProcessWritable.js");
 const StringToLinesTransform = require("./StringToLinesTransform.js");
+const {
+    deserializeData,
+    serializeData,
+} = require("./Serialization.js");
 
 const separator = ":_:";
 
@@ -22,19 +25,24 @@ module.exports = class MapReduceOrchestrator {
 
         return pipeline(
             this.getIncomeStream(),
-            new StringToLinesTransform(),
+            this.getLinesStream(),
             this.getMapStream(),
             this.errorProcessing,
         )
     }
 
-    setManagerStream(stream, stage, key) {
+    setManagerStream(stage, stream) {
         return pipeline(
             stream,
-            new StringToLinesTransform(),
-            this.getOutcomeStream(stage, key),
+            this.getLinesStream(),
+            this.getSerializationStream(stage),
+            this.getOutcomeStream(stage),
             this.errorProcessing,
         );
+    }
+
+    getLinesStream() {
+        return new StringToLinesTransform();
     }
 
     getIncomeStream() {
@@ -92,12 +100,21 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
+    getSerializationStream(stage, key) {
+        return new Transform({
+            transform(chunk, encoding, callback) {
+                const data = chunk.toString();
+                this.push(serializeData(stage, key, data));
+                callback();
+            },
+        });
+    }
+
     getOutcomeStream(stage, key) {
         return new SendToProcessWritable({
             mapReduceOrchestrator: this,
-            stage: stage || this._initStage,
-            key,
             serverName: this._server.getName(),
+            stage, key,
         });
     }
 
@@ -110,11 +127,18 @@ module.exports = class MapReduceOrchestrator {
         return new Writable({
             write(chunk, encoding, callback) {
                 const raw = chunk.toString();
-                const { stage, key, data } = mapReduceOrchestrator.deserializeData(raw);
+                const { stage, key, data } = deserializeData(raw);
                 const stream = mapReduceOrchestrator.getStageKeyStream(stage, key);
-                stream.push(data);
+                if (data) {
+                    stream.push(raw);
+                } else {
+                    stream.push(null);
+                }
                 callback();
             },
+            final(callback) {
+                callback();
+            }
         });
     }
 
@@ -122,17 +146,20 @@ module.exports = class MapReduceOrchestrator {
         const mapReduceOrchestrator = this;
         const hash = this.getHash(stage, key);
         if (!this._stageKeyStreamMap[hash]) {
-            const stream = new Readable({
+            const readStream = new Readable({
                 read() {},
                 final(callback) {
+                    // TODO: Fix REMOVE stream
+                    console.log("REMOVE", stage, key, hash);
                     delete mapReduceOrchestrator._stageKeyStreamMap[hash];
                     callback();
-                }
+                },
             });
+            
             this._stageKeyStreamMap[hash] = {
-                stream,
+                stream: readStream,
                 pipeline: pipeline(
-                    stream,
+                    readStream,
                     ...this.getMapStreams(stage, key),
                 ),
             };
@@ -148,14 +175,16 @@ module.exports = class MapReduceOrchestrator {
 
     getMapStreams(stage, key) {
         const mapper = this._mappers[stage];
-        const [nextStage, nextKey, mapStream] = mapper(key);
-        if (nextStage) {
+        const stream = mapper(key);
+        if (stream instanceof Readable) {
             return [
-                mapStream,
-                this.getOutcomeStream(nextStage, nextKey),
-            ];
+                stream,
+                this.getOutcomeStream(stage, key),
+            ]
         } else {
-            return [mapStream];
+            return [
+                stream,
+            ];
         }
     }
 
@@ -165,19 +194,11 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
-    serializeData(stage, key, data) {
-        return safeStringify({ stage, key, data });
-    }
-
-    deserializeData(raw) {
-        return JSON.parse(raw);
-    }
-
     push(serverName, stage, key, data) {
         const nextServerName = this.getNextServer(serverName, stage, key);
         this.setNextServer(nextServerName, stage, key);
         const server = this._serverPool.getServer(nextServerName);
-        const raw = this.serializeData(stage, key, data);
+        const raw = serializeData(stage, key, data);
         server.sendData(raw + "\n");
     }
 }

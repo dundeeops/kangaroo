@@ -5,6 +5,8 @@ const config = require("./Config.js");
 const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
 const ServerPool = require("./ServerPool.js");
 const ServerEntry = require("./ServerEntry.js");
+const MapTransform = require("./MapTransform.js");
+const MapWritable = require("./MapWritable.js");
 
 const serverPool = new ServerPool({
     servers: config.servers
@@ -19,54 +21,71 @@ const server = new ServerEntry({
 const mapReduceOrchestrator = new MapReduceOrchestrator({
     serverPool,
     server,
-    initStage: "init",
 });
-
-const { Transform, Writable } = require("stream");
 
 mapReduceOrchestrator.map("init", (key) => {
-    const stringToLinesStream = new Transform({
+    let state = false;
+    return new MapTransform({
         transform(chunk, encoding, callback) {
-            // TODO: chunk be an object and put stage & key inside a stream extends MapTransform & MapWritable
-            // this.push("final", "final", chunk); | this.push("final", chunk); | this.push(chunk);
-            this.push(chunk.toString());
-            callback();
-        }
-    });
-    return ["final", "final", stringToLinesStream];
-});
-
-const readline = require("readline");
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-mapReduceOrchestrator.map("final", (key) => {
-    let data = "";
-    const stringToLinesStream = new Writable({
-        write(chunk, encoding, callback) {
-            console.log("line", chunk.toString());
-            data += chunk.toString() + "\n";
+            const { data } = this.parse(chunk);
+            state = !state;
+            this.send({
+                stage: "final",
+                key: state ? "final" : "final_alt",
+                data,
+            });
             callback();
         },
         final(callback) {
-            console.log(data);
-            console.log("The data has been processed!");
-
-            rl.question("Run again? [y/n]: ", (answer) => {
-                if (answer === "y") {
-                    run();
-                } else {
-                    rl.close();
-                    process.exit();
-                }
+            console.log("The data has been processed 1 stage!", key);
+            this.send({
+                stage: "final",
+                key: "final",
+                data: null,
             });
-
+            this.send({
+                stage: "final",
+                key: "final_alt",
+                data: null,
+            });
             callback();
         }
     });
-    return [null, null, stringToLinesStream];
+});
+
+// const readline = require("readline");
+// const rl = readline.createInterface({
+//     input: process.stdin,
+//     output: process.stdout
+// });
+
+mapReduceOrchestrator.map("final", (key) => {
+    let sum = "";
+    return new MapWritable({
+        write(chunk, encoding, callback) {
+            const { data } = this.parse(chunk);
+            console.log("line", key, data);
+            sum += data + "\n";
+            callback();
+        },
+        final(callback) {
+            console.log(sum);
+            console.log("The data has been processed!", key);
+
+            callback();
+
+            process.exit();
+            // rl.question("Run again? [y/n]: ", (answer) => {
+            //     if (answer === "y") {
+            //         run();
+            //     } else {
+            //         rl.close();
+            //         process.exit();
+            //     }
+            // });
+
+        }
+    });
 });
 
 mapReduceOrchestrator.runWorker();
@@ -75,7 +94,8 @@ mapReduceOrchestrator.runWorker();
 
 function run() {
     mapReduceOrchestrator.setManagerStream(
-        fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" })
+        "init",
+        fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     ).on("finish", () => {
         console.log("The data has been sent!");
     });
