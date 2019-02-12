@@ -1,9 +1,15 @@
 const config = require("./Config.js");
-const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
-const ServerPool = require("./ServerPool.js");
-const ServerEntry = require("./ServerEntry.js");
-const MapTransform = require("./MapTransform.js");
-const MapWritable = require("./MapWritable.js");
+
+// Engine
+
+const ServerPool = require("./engine/ServerPool.js");
+const ServerEntry = require("./engine/ServerEntry.js");
+const MapTransform = require("./engine/MapTransform.js");
+const MapWritable = require("./engine/MapWritable.js");
+const MapReduceWorker = require("./engine/MapReduceWorker.js");
+const MapReduceManager = require("./engine/MapReduceManager.js");
+
+// Initialization
 
 const serverPool = new ServerPool({
     servers: config.servers
@@ -15,12 +21,20 @@ const server = new ServerEntry({
     port: config.port,
 });
 
-const mapReduceOrchestrator = new MapReduceOrchestrator({
-    serverPool,
+const mapReduceWorker = new MapReduceWorker({
     server,
+    serverPool,
+    preferableServerName: server.getName(),
 });
 
-mapReduceOrchestrator.map("init", (key) => {
+const mapReduceManager = new MapReduceManager({
+    serverPool,
+    preferableServerName: server.getName(),
+});
+
+// Mapping
+
+mapReduceWorker.setMap("init", (key) => {
     let state = false;
     return new MapTransform({
         transform(chunk, encoding, callback) {
@@ -56,7 +70,7 @@ mapReduceOrchestrator.map("init", (key) => {
 //     output: process.stdout
 // });
 
-mapReduceOrchestrator.map("final", (key) => {
+mapReduceWorker.setMap("final", (key) => {
     let sum = "";
     return new MapWritable({
         write(chunk, encoding, callback) {
@@ -85,7 +99,9 @@ mapReduceOrchestrator.map("final", (key) => {
     });
 });
 
-mapReduceOrchestrator.runWorker();
+// Run Worker
+
+mapReduceWorker.runWorker();
 
 // Test Part
 
@@ -93,19 +109,19 @@ const fs = require("fs");
 const path = require("path");
 
 function run() {
-    mapReduceOrchestrator.setManagerStream(
+    mapReduceManager.runManagerStream(
         "init",
         fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     ).on("finish", () => {
         console.log("The data has been sent!");
     });
-    // mapReduceOrchestrator.setManagerStream(
+    // mapReduceManager.runManagerStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     // ).on("finish", () => {
     //     console.log("The data has been sent!");
     // });
-    // mapReduceOrchestrator.setManagerStream(
+    // mapReduceManager.runManagerStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     // ).on("finish", () => {
