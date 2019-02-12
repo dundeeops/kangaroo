@@ -1,44 +1,91 @@
 const { Readable } = require("stream");
-const { ServerFactory } = require("./ServerFactory.js");
+const net = require("net");
+const domain = require("domain");
+
+const RESTART_TIMEOUT = 500;
 
 module.exports = class ServerEntry {
     constructor(options) {
-        this.name = options.name;
-        this.hostname = options.hostname;
-        this.port = options.port;
+        this._name = options.name;
+        this._hostname = options.hostname;
+        this._port = options.port;
         this._stream = this.makeStream();
+        this._server = null;
+        this._isStarting = false;
+        this._restartInterval = null;
+        this._shouldRestart = options.restart != null ? options.restart : true;
+        this._restartTimeout = options.restartTimeout || RESTART_TIMEOUT;
+        this._domain = domain.create();
+        this._domain.on("error", this.onError.bind(this));
     }
 
-    async init() {
-        await this.runServer();
+    onError(error) {
+        console.error(`Worker failed ${this._name}`, error.message, error.stack);
+        this._server = null;
+        this._isStarting = false;
+        this.startRestart();
     }
 
-    async runServer() {
-        const server = this;
-        return await new Promise(async (r) => {
-            this._server = ServerFactory({
-                port: this.port,
-                hostname: this.hostname,
-                prepare: (socket) => {
-                    socket.on("data", function(data) {
-                        server._stream.push(data.toString("utf8"));
-                    });
-                },
-                onConnect: () => r(),
+    getName() {
+        return this._name;
+    }
+
+    startRestart() {
+        this.stopRestart();
+        this._restartInterval = setInterval(() => {
+            if (this._shouldRestart) {
+                this.checkRunning();
+            }
+        }, this._restartTimeout);
+    }
+
+    stopRestart() {
+        if (this._restartInterval) {
+            clearInterval(this._restartInterval);
+            this._restartInterval = null;
+        }
+    }
+
+    checkRunning() {
+        if (!this._isStarting && !this._server) {
+            this.run();
+        }
+    }
+
+    makeServer(onSocketConected, onConnect, onClose) {
+        const server = net.createServer(onSocketConected);
+        server.on("close", () => onClose());
+        server.listen(this._port, this._hostname, () => onConnect());
+        return server;
+    }
+
+    run() {
+        this._domain.run(() => {
+            this._isStarting = true;
+
+            const server = this.makeServer((socket) => {
+                socket.on("data", (data) => {
+                    this._stream.push(data.toString("utf8"));
+                });
+            }, () => {
+                console.log(`Worker started with ${this._name}`);
+                this.stopRestart();
+                this._server = server;
+                this._isStarting = false;
+            }, () => {
+                console.log(`Worker stopped with ${this._name}`);
+                this._server = null;
+                this._isStarting = false;
+                this.startRestart();
             });
 
-            this._server.on("end", () => {
-                r();
-            });
+            return server;
         });
     }
 
     makeStream() {
         return new Readable({
             read() {},
-            final(callback) {
-                callback();
-            }
         });
     }
 

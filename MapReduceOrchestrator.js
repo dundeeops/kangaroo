@@ -11,22 +11,30 @@ module.exports = class MapReduceOrchestrator {
         this._serverPool = options.serverPool;
         this._server = options.server;
         this._initStage = options.initStage;
-        this._name = options.name;
         this._mappers = {};
         this._serverStageMap = {};
         this._stageKeyMap = {};
         this._stageKeyStreamMap = {};
     }
 
-    async init() {
-        await this._server.init();
+    async runWorker() {
+        this._server.checkRunning();
 
         return pipeline(
             this.getIncomeStream(),
             new StringToLinesTransform(),
-            this.getStream(),
+            this.getMapStream(),
             this.errorProcessing,
         )
+    }
+
+    setManagerStream(stream, stage, key) {
+        return pipeline(
+            stream,
+            new StringToLinesTransform(),
+            this.getOutcomeStream(stage, key),
+            this.errorProcessing,
+        );
     }
 
     getIncomeStream() {
@@ -43,20 +51,20 @@ module.exports = class MapReduceOrchestrator {
 
     getServerStageKeySorted(serverName, stage) {
         return this._serverPool.getServers().sort((a, b) => {
-            const aServerHash = this.getHash(a.name, stage);
+            const aServerHash = this.getHash(a.getName(), stage);
             const aKeyCount = getServerStageKeyCount(aServerHash);
-            const bServerHash = this.getHash(b.name, stage);
+            const bServerHash = this.getHash(b.getName(), stage);
             const bKeyCount = getServerStageKeyCount(bServerHash);
             if (aKeyCount === bKeyCount) {
-                if (a.name === serverName) {
+                if (a.getName() === serverName) {
                     return 1;
-                } else if (b.name === serverName) {
+                } else if (b.getName() === serverName) {
                     return -1;
                 }
             } else {
                 return aKeyCount < bKeyCount ? 1 : -1;
             }
-        }).map((server) => server.name);
+        }).map((server) => server.getName());
     }
 
     getNextServer(serverName, stage, key) {
@@ -84,12 +92,12 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
-    getOutcomeStream(options) {
+    getOutcomeStream(stage, key) {
         return new SendToProcessWritable({
             mapReduceOrchestrator: this,
-            stage: (options && options.stage) || this._initStage,
-            key: options && options.key,
-            serverName: this._name,
+            stage: stage || this._initStage,
+            key,
+            serverName: this._server.getName(),
         });
     }
 
@@ -97,7 +105,7 @@ module.exports = class MapReduceOrchestrator {
         this._mappers[key] = callbackStream;
     }
 
-    getStream() {
+    getMapStream() {
         const mapReduceOrchestrator = this;
         return new Writable({
             write(chunk, encoding, callback) {
@@ -107,10 +115,6 @@ module.exports = class MapReduceOrchestrator {
                 stream.push(data);
                 callback();
             },
-
-            final(callback) {
-                callback();
-            }
         });
     }
 
@@ -118,20 +122,22 @@ module.exports = class MapReduceOrchestrator {
         const mapReduceOrchestrator = this;
         const hash = this.getHash(stage, key);
         if (!this._stageKeyStreamMap[hash]) {
-            this._stageKeyStreamMap[hash] = new Readable({
-                read() {
-                },
+            const stream = new Readable({
+                read() {},
                 final(callback) {
                     delete mapReduceOrchestrator._stageKeyStreamMap[hash];
                     callback();
                 }
             });
-            pipeline(
-                this._stageKeyStreamMap[hash],
-                ...this.mapStream(stage, key),
-            )
+            this._stageKeyStreamMap[hash] = {
+                stream,
+                pipeline: pipeline(
+                    stream,
+                    ...this.getMapStreams(stage, key),
+                ),
+            };
         }
-        return this._stageKeyStreamMap[hash];
+        return this._stageKeyStreamMap[hash].stream;
     }
 
     makeStream() {
@@ -140,29 +146,22 @@ module.exports = class MapReduceOrchestrator {
         });
     }
 
-    mapStream(stage, key) {
+    getMapStreams(stage, key) {
         const mapper = this._mappers[stage];
         const [nextStage, nextKey, mapStream] = mapper(key);
         if (nextStage) {
             return [
                 mapStream,
-                this.getOutcomeStream({
-                    stage: nextStage,
-                    key: nextKey,
-                }),
+                this.getOutcomeStream(nextStage, nextKey),
             ];
         } else {
-            return [
-                mapStream,
-            ];
+            return [mapStream];
         }
     }
 
     errorProcessing(err) {
         if (err) {
             console.error("Pipeline failed.", err);
-        } else {
-            console.log("Pipeline succeeded.");
         }
     }
 
