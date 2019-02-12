@@ -64,11 +64,11 @@ mapReduceWorker.setMap("init", (key) => {
     });
 });
 
-// const readline = require("readline");
-// const rl = readline.createInterface({
-//     input: process.stdin,
-//     output: process.stdout
-// });
+const readline = require("readline");
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
 
 mapReduceWorker.setMap("final", (key) => {
     let sum = "";
@@ -87,14 +87,14 @@ mapReduceWorker.setMap("final", (key) => {
 
             // process.exit();
 
-            // rl.question("Run again? [y/n]: ", (answer) => {
-            //     if (answer === "y") {
-            //         run();
-            //     } else {
-            //         rl.close();
-            //         process.exit();
-            //     }
-            // });
+            rl.question("Run again? [y/n]: ", (answer) => {
+                if (answer === "y") {
+                    run();
+                } else {
+                    rl.close();
+                    process.exit();
+                }
+            });
         }
     });
 });
