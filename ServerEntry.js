@@ -86,6 +86,7 @@ module.exports = class ServerEntry {
 
     makeStream() {
         return new Readable({
+            autoDestroy: true,
             read() {},
         });
     }

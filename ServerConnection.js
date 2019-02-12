@@ -90,6 +90,7 @@ module.exports = class ServerConnection {
 
     makeStream() {
         return new Writable({
+            autoDestroy: true,
             write(chunk, encoding, callback) {
                 callback();
             },

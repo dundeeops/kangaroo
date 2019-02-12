@@ -133,11 +133,16 @@ module.exports = class MapReduceOrchestrator {
             write(chunk, encoding, callback) {
                 const raw = chunk.toString();
                 const { session, stage, key, data } = deserializeData(raw);
-                const stream = mapReduceOrchestrator.getStageKeyStream(session, stage, key);
+                const hash = mapReduceOrchestrator.getHash(session, stage, key);
                 if (data) {
+                    const stream = mapReduceOrchestrator.getStageKeyStreamOrCreate(hash, session, stage, key);
                     stream.push(raw);
                 } else {
-                    stream.push(null);
+                    const stream = mapReduceOrchestrator.getStageKeyStream(hash);
+                    if (stream) {
+                        stream.push(null);
+                        stream.destroy();
+                    }
                 }
                 callback();
             },
@@ -147,15 +152,18 @@ module.exports = class MapReduceOrchestrator {
         });
     }
 
-    getStageKeyStream(session, stage, key) {
-        const mapReduceOrchestrator = this;
-        const hash = this.getHash(session, stage, key);
+    getStageKeyStream(hash) {
+        return this._stageKeyStreamMap[hash] && this._stageKeyStreamMap[hash].stream;
+    }
+
+    getStageKeyStreamOrCreate(hash, session, stage, key) {
         if (!this._stageKeyStreamMap[hash]) {
+            const mapReduceOrchestrator = this;
             const readStream = new Readable({
+                autoDestroy: true,
                 read() {},
-                final(callback) {
-                    // TODO: Fix REMOVE stream
-                    console.log("REMOVE", session, stage, key, hash);
+                destroy(error, callback) {
+                    mapReduceOrchestrator._stageKeyStreamMap[hash] = undefined;
                     delete mapReduceOrchestrator._stageKeyStreamMap[hash];
                     callback();
                 },
@@ -169,11 +177,12 @@ module.exports = class MapReduceOrchestrator {
                 ),
             };
         }
-        return this._stageKeyStreamMap[hash].stream;
+        return this.getStageKeyStream(hash);
     }
 
     makeStream() {
         return new Readable({
+            autoDestroy: true,
             read() {},
         });
     }
@@ -182,11 +191,13 @@ module.exports = class MapReduceOrchestrator {
         const mapper = this._mappers[stage];
         const stream = mapper(key);
         if (stream instanceof Readable) {
+            // TODO: release used resources
             return [
                 stream,
                 this.getOutcomeStream(session, stage, key),
             ]
         } else {
+            // TODO: release used resources
             return [
                 stream,
             ];
