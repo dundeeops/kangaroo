@@ -18,13 +18,18 @@ module.exports = class SendToProcessWritable extends Writable {
         } else {
             chunk = bytes;
         }
-        this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
+        if (chunk) {
+            this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
+        }
         callback();
     }
 
     _final(callback) {
         const chunk = this._decoder.end();
-        this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
+        if (chunk) {
+            this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
+        }
+        this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, null);
         callback();
     }
 }

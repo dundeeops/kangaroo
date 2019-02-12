@@ -41,6 +41,7 @@ mapReduceOrchestrator.map("final", (key) => {
     let data = "";
     const stringToLinesStream = new Writable({
         write(chunk, encoding, callback) {
+            console.log("line", chunk.toString())
             data += chunk.toString() + "\n";
             callback();
         },

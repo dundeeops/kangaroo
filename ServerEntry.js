@@ -36,8 +36,7 @@ module.exports = class ServerEntry {
 
     makeStream() {
         return new Readable({
-            read() {
-            },
+            read() {},
             final(callback) {
                 callback();
             }

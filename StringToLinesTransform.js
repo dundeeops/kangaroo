@@ -11,9 +11,12 @@ module.exports = class StringToLinesTransform extends Transform {
     sendData(str) {
         const data = this.cacheStr + str;
         const chunks = data.split("\n");
+console.log(chunks);
 
         for (let i = 0; i < chunks.length - 1; i++) {
-            this.push(chunks[i]);
+            if (chunks[i]) {
+                this.push(chunks[i]);
+            }
         }
 
         if (chunks[chunks.length - 1]) {
@@ -40,7 +43,11 @@ module.exports = class StringToLinesTransform extends Transform {
     _final(callback) {
         let data = this._decoder.end();
         this.sendData(data);
-        this.push(this.cacheStr);
+        if (this.cacheStr) {
+            console.log("cahched", this.cacheStr);
+            this.push(this.cacheStr);
+        }
+        console.log("closed", this.cacheStr);
         callback();
     }
 }
