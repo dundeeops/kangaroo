@@ -24,12 +24,12 @@ const server = new ServerEntry({
 const mapReduceWorker = new MapReduceWorker({
     server,
     serverPool,
-    preferableServerName: server.getName(),
+    preferableServerName: config.name,
 });
 
 const mapReduceManager = new MapReduceManager({
     serverPool,
-    preferableServerName: server.getName(),
+    preferableServerName: config.name,
 });
 
 // Mapping
