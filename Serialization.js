@@ -1,8 +1,8 @@
 const safeStringify = require("fast-safe-stringify");
 
 module.exports = {
-    serializeData(stage, key, data) {
-        return safeStringify({ stage, key, data });
+    serializeData(session, stage, key, data) {
+        return safeStringify({ session, stage, key, data });
     },
 
     deserializeData(raw) {

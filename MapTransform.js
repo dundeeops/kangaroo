@@ -13,7 +13,7 @@ module.exports = class MapTransform extends Transform {
         return deserializeData(raw);
     }
 
-    send({ stage, key, data }) {
-        this.push(serializeData(stage, key, data));
+    send({ session, stage, key, data }) {
+        this.push(serializeData(session, stage, key, data));
     }
 }

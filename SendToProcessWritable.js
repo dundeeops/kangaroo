@@ -10,13 +10,18 @@ module.exports = class SendToProcessWritable extends Writable {
         this._decoder = new StringDecoder(options && options.defaultEncoding);
         this._mapReduceOrchestrator = options && options.mapReduceOrchestrator;
         this._serverName = options && options.serverName;
+        this._session = options && options.session;
         this._stage = options && options.stage;
         this._key = options && options.key;
     }
 
     send(raw) {
         const { stage, key, data } = deserializeData(raw);
-        this._mapReduceOrchestrator.push(this._serverName, stage, key, data);
+        this._mapReduceOrchestrator.push(this._serverName, this._session, stage, key, data);
+    }
+
+    sendFinal() {
+        this._mapReduceOrchestrator.push(this._serverName, this._session, this._stage, this._key, null);
     }
 
     _write(bytes, encoding, callback) {
@@ -30,6 +35,7 @@ module.exports = class SendToProcessWritable extends Writable {
         if (chunk) {
             this.send(chunk);
         }
+
         callback();
     }
 
@@ -39,7 +45,9 @@ module.exports = class SendToProcessWritable extends Writable {
         if (chunk) {
             this.send(chunk);
         }
-        this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, null);
+
+        this.sendFinal();
+
         callback();
     }
 }

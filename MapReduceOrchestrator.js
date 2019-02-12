@@ -32,11 +32,12 @@ module.exports = class MapReduceOrchestrator {
     }
 
     setManagerStream(stage, stream) {
+        const session = this.getId();
         return pipeline(
             stream,
             this.getLinesStream(),
-            this.getSerializationStream(stage),
-            this.getOutcomeStream(stage),
+            this.getSerializationStream(session, stage),
+            this.getOutcomeStream(session, stage),
             this.errorProcessing,
         );
     }
@@ -51,6 +52,10 @@ module.exports = class MapReduceOrchestrator {
 
     getHash(...args) {
         return crypto.createHash('sha1').update(args.join(separator)).digest('base64');
+    }
+
+    getId() {
+        return this.getHash(Math.random().toString())
     }
 
     getServerStageKeyCount(serverStageHash) {
@@ -100,21 +105,21 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
-    getSerializationStream(stage, key) {
+    getSerializationStream(session, stage, key) {
         return new Transform({
             transform(chunk, encoding, callback) {
                 const data = chunk.toString();
-                this.push(serializeData(stage, key, data));
+                this.push(serializeData(session, stage, key, data));
                 callback();
             },
         });
     }
 
-    getOutcomeStream(stage, key) {
+    getOutcomeStream(session, stage, key) {
         return new SendToProcessWritable({
             mapReduceOrchestrator: this,
             serverName: this._server.getName(),
-            stage, key,
+            session, stage, key,
         });
     }
 
@@ -127,8 +132,8 @@ module.exports = class MapReduceOrchestrator {
         return new Writable({
             write(chunk, encoding, callback) {
                 const raw = chunk.toString();
-                const { stage, key, data } = deserializeData(raw);
-                const stream = mapReduceOrchestrator.getStageKeyStream(stage, key);
+                const { session, stage, key, data } = deserializeData(raw);
+                const stream = mapReduceOrchestrator.getStageKeyStream(session, stage, key);
                 if (data) {
                     stream.push(raw);
                 } else {
@@ -142,15 +147,15 @@ module.exports = class MapReduceOrchestrator {
         });
     }
 
-    getStageKeyStream(stage, key) {
+    getStageKeyStream(session, stage, key) {
         const mapReduceOrchestrator = this;
-        const hash = this.getHash(stage, key);
+        const hash = this.getHash(session, stage, key);
         if (!this._stageKeyStreamMap[hash]) {
             const readStream = new Readable({
                 read() {},
                 final(callback) {
                     // TODO: Fix REMOVE stream
-                    console.log("REMOVE", stage, key, hash);
+                    console.log("REMOVE", session, stage, key, hash);
                     delete mapReduceOrchestrator._stageKeyStreamMap[hash];
                     callback();
                 },
@@ -160,7 +165,7 @@ module.exports = class MapReduceOrchestrator {
                 stream: readStream,
                 pipeline: pipeline(
                     readStream,
-                    ...this.getMapStreams(stage, key),
+                    ...this.getMapStreams(session, stage, key),
                 ),
             };
         }
@@ -173,13 +178,13 @@ module.exports = class MapReduceOrchestrator {
         });
     }
 
-    getMapStreams(stage, key) {
+    getMapStreams(session, stage, key) {
         const mapper = this._mappers[stage];
         const stream = mapper(key);
         if (stream instanceof Readable) {
             return [
                 stream,
-                this.getOutcomeStream(stage, key),
+                this.getOutcomeStream(session, stage, key),
             ]
         } else {
             return [
@@ -194,11 +199,11 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
-    push(serverName, stage, key, data) {
+    push(serverName, session, stage, key, data) {
         const nextServerName = this.getNextServer(serverName, stage, key);
         this.setNextServer(nextServerName, stage, key);
         const server = this._serverPool.getServer(nextServerName);
-        const raw = serializeData(stage, key, data);
+        const raw = serializeData(session, stage, key, data);
         server.sendData(raw + "\n");
     }
 }

@@ -1,6 +1,3 @@
-const fs = require("fs");
-const path = require("path");
-
 const config = require("./Config.js");
 const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
 const ServerPool = require("./ServerPool.js");
@@ -37,7 +34,7 @@ mapReduceOrchestrator.map("init", (key) => {
             callback();
         },
         final(callback) {
-            console.log("The data has been processed 1 stage!", key);
+            // console.log("The data has been processed 1 stage!", key);
             this.send({
                 stage: "final",
                 key: "final",
@@ -74,7 +71,8 @@ mapReduceOrchestrator.map("final", (key) => {
 
             callback();
 
-            process.exit();
+            // process.exit();
+
             // rl.question("Run again? [y/n]: ", (answer) => {
             //     if (answer === "y") {
             //         run();
@@ -83,7 +81,6 @@ mapReduceOrchestrator.map("final", (key) => {
             //         process.exit();
             //     }
             // });
-
         }
     });
 });
@@ -92,6 +89,9 @@ mapReduceOrchestrator.runWorker();
 
 // Test Part
 
+const fs = require("fs");
+const path = require("path");
+
 function run() {
     mapReduceOrchestrator.setManagerStream(
         "init",
@@ -99,6 +99,18 @@ function run() {
     ).on("finish", () => {
         console.log("The data has been sent!");
     });
+    // mapReduceOrchestrator.setManagerStream(
+    //     "init",
+    //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
+    // ).on("finish", () => {
+    //     console.log("The data has been sent!");
+    // });
+    // mapReduceOrchestrator.setManagerStream(
+    //     "init",
+    //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
+    // ).on("finish", () => {
+    //     console.log("The data has been sent!");
+    // });
 }
 
 run();
