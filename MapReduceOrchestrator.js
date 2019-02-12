@@ -62,7 +62,7 @@ module.exports = class MapReduceOrchestrator {
     getNextServer(serverName, stage, key) {
         const stageKeyHash = this.getHash(stage, key);
         if (
-            this._stageKeyMap[stageKeyHash]
+            key != null && this._stageKeyMap[stageKeyHash]
         ) {
             return this._stageKeyMap[stageKeyHash];
         } else {
@@ -72,9 +72,11 @@ module.exports = class MapReduceOrchestrator {
     }
 
     setNextServer(serverName, stage, key) {
-        const stageKeyHash = this.getHash(stage, key);
+        if (key != null) {
+            const stageKeyHash = this.getHash(stage, key);
+            this._stageKeyMap[stageKeyHash] = serverName;
+        }
         const serverStageHash = this.getHash(serverName, stage);
-        this._stageKeyMap[stageKeyHash] = serverName;
         if (!this._serverStageMap[serverStageHash]) {
             this._serverStageMap[serverStageHash] = 1;
         } else {
@@ -134,8 +136,7 @@ module.exports = class MapReduceOrchestrator {
 
     makeStream() {
         return new Readable({
-            read() {
-            },
+            read() {},
         });
     }
 
