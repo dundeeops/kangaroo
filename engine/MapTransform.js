@@ -14,6 +14,6 @@ module.exports = class MapTransform extends Transform {
     }
 
     send({ session, stage, key, data }) {
-        this.push(serializeData(session, stage, key, data));
+        this.push(serializeData({ session, stage, key, data }));
     }
 }

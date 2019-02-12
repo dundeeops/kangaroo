@@ -93,7 +93,7 @@ module.exports = class MapReduceOrchestrator {
         const nextServerName = this.getNextServer(serverName, stage, key);
         this.setNextServer(nextServerName, stage, key);
         const server = this._serverPool.getServer(nextServerName);
-        const raw = serializeData(session, stage, key, data);
+        const raw = serializeData({ session, stage, key, data });
         server.sendData(raw + "\n");
     }
 }

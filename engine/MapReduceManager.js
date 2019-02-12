@@ -27,7 +27,7 @@ module.exports = class MapReduceManager extends MapReduceBase {
         return new Transform({
             transform(chunk, encoding, callback) {
                 const data = chunk.toString();
-                this.push(serializeData(session, stage, key, data));
+                this.push(serializeData({ session, stage, key, data }));
                 callback();
             },
         });
