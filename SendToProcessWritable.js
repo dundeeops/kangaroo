@@ -13,27 +13,18 @@ module.exports = class SendToProcessWritable extends Writable {
 
     _write(bytes, encoding, callback) {
         let chunk;
-
         if (encoding === "buffer") {
             chunk = this._decoder.write(bytes);
         } else {
             chunk = bytes;
         }
-
-        if (chunk) {
-            this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
-        }
-
+        this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
         callback();
     }
 
     _final(callback) {
         const chunk = this._decoder.end();
-
-        if (chunk) {
-            this._mapReduceOrchestrator.send(this._serverName, this._stage, this._key, chunk);
-        }
-
+        this._mapReduceOrchestrator.push(this._serverName, this._stage, this._key, chunk);
         callback();
     }
 }

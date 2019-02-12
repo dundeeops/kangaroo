@@ -5,38 +5,29 @@ const { pipeline } = require('stream');
 const config = require("./Config.js");
 const StringToLinesTransform = require("./StringToLinesTransform.js");
 const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
+const ServerPool = require("./ServerPool.js");
+const ServerEntry = require("./ServerEntry.js");
 
 const serverPool = new ServerPool({
-    config
+    servers: config.servers
 });
 
-// const { ServerFactory } = require("./ServerFactory.js");
-
-// ServerFactory({
-//     port: 1337,
-//     hostname: "0.0.0.0",
-//     prepare: socket => {
-//         socket.write("Echo server\r\n");
-//         socket.on("data", function(data) {
-//             console.log(data);
-//             textChunk = data.toString("utf8");
-//             console.log(textChunk);
-//             // socket.write(textChunk);
-//         });
-//     }
-// });
+const server = new ServerEntry({
+    name: config.name,
+    hostname: config.hostname,
+    port: config.port,
+});
 
 const mapReduceOrchestrator = new MapReduceOrchestrator({
     serverPool,
-    server: null,
+    server,
+    name: config.name,
     initStage: "init",
-    config,
 });
-
 
 const { Transform, Writable } = require("stream");
 
-mapReduce.map("init", (key) => {
+mapReduceOrchestrator.map("init", (key) => {
     const stringToLinesStream = new Transform({
         transform(chunk, encoding, callback) {
             this.push(chunk.toString());
@@ -46,11 +37,11 @@ mapReduce.map("init", (key) => {
     return ["final", "final", stringToLinesStream];
 });
 
-mapReduce.map("final", (key) => {
+mapReduceOrchestrator.map("final", (key) => {
     let data = "";
     const stringToLinesStream = new Writable({
         write(chunk, encoding, callback) {
-            data += chunk.toString();
+            data += chunk.toString() + "\n";
             callback();
         },
         final(callback) {
@@ -63,22 +54,28 @@ mapReduce.map("final", (key) => {
 
 // Test Part
 
-const file = "./data.txt";
-const readFileStream = fs.createReadStream(path.resolve(file), { encoding: "utf8" });
-const stringToLinesStream = new StringToLinesTransform();
+async function run() {
+    await mapReduceOrchestrator.init();
 
-pipeline(
-    readFileStream,
-    stringToLinesStream,
-    mapReduceOrchestrator.getStream(),
-    err => {
-        if (err) {
-            console.error("Pipeline failed.", err);
-        } else {
-            console.log("Pipeline succeeded.");
+    const file = "./data.txt";
+    const readFileStream = fs.createReadStream(path.resolve(file), { encoding: "utf8" });
+    const stringToLinesStream = new StringToLinesTransform();
+    
+    pipeline(
+        readFileStream,
+        stringToLinesStream,
+        mapReduceOrchestrator.getOutcomeStream(),
+        err => {
+            if (err) {
+                console.error("Pipeline failed.", err);
+            } else {
+                console.log("Pipeline succeeded.");
+            }
         }
-    }
-);
+    );
+}
+
+run();
 
 // stringToLinesStream.on("data", data => {
 //     console.log("data", data.toString());
