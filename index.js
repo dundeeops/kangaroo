@@ -1,5 +1,7 @@
 const config = require("./Config.js");
+const argv = require('yargs').argv;
 
+console.log(argv);
 // Engine
 
 const ServerPool = require("./engine/ServerPool.js");
@@ -7,6 +9,7 @@ const MapTransform = require("./engine/MapTransform.js");
 const MapWritable = require("./engine/MapWritable.js");
 const MapReduceWorker = require("./engine/MapReduceWorker.js");
 const MapReduceManager = require("./engine/MapReduceManager.js");
+const TimeoutError = require("./engine/TimeoutError.js");
 
 // Initialization
 
@@ -14,19 +17,27 @@ const serverPool = new ServerPool({
     servers: config.servers
 });
 
+if (argv.c) {
+    argv.c.forEach((name) => {
+        if (typeof name === "string") {
+            const [hostname, port] = name.split(":");
+            serverPool.addServer(hostname, port);
+        }
+    });
+}
+
 const mapReduceWorker = new MapReduceWorker({
     server: {
-        name: config.name,
         hostname: config.hostname,
         port: config.port,
     },
     serverPool,
-    preferableServerName: config.name,
+    preferableServerName: config.preferableServerName,
 });
 
 const mapReduceManager = new MapReduceManager({
     serverPool,
-    preferableServerName: config.name,
+    preferableServerName: config.preferableServerName,
 });
 
 // Mapping
@@ -67,6 +78,8 @@ const rl = readline.createInterface({
     output: process.stdout
 });
 
+let count = 0;
+
 mapReduceWorker.setMap("final", (key) => {
     let sum = "";
     return new MapWritable({
@@ -79,19 +92,22 @@ mapReduceWorker.setMap("final", (key) => {
         final(callback) {
             console.log(sum);
             console.log("The data has been processed!", key);
+            count++;
 
             callback();
 
-            // process.exit();
+            if (count === 2) {
+                process.exit();
 
-            rl.question("\n", (answer) => {
-                if (answer === "r") {
-                    run();
-                } else {
-                    rl.close();
-                    process.exit();
-                }
-            });
+                // rl.question("\n", (answer) => {
+                //     if (answer === "r") {
+                //         run();
+                //     } else {
+                //         rl.close();
+                //         process.exit();
+                //     }
+                // });
+            }
         }
     });
 });
@@ -108,12 +124,16 @@ const path = require("path");
 async function run() {
     await serverPool.run();
 
+    let timeout = new TimeoutError();
+    timeout.start("TIMEOUT: Error sending an initial stream");
     mapReduceManager.runStream(
         "init",
         fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     ).on("finish", () => {
         console.log("The data has been sent!");
+        timeout.stop();
     });
+
     // mapReduceManager.runStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),

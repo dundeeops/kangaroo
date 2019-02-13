@@ -2,15 +2,14 @@ const { pipeline, Writable, Readable } = require("stream");
 const {
     deserializeData,
 } = require("./Serialization.js");
-const MapReduceBase = require("./MapReduceOrchestrator.js");
+const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
 const ServerEntry = require("./ServerEntry.js");
 
-module.exports = class MapReduceManagerWorker extends MapReduceBase {
+module.exports = class MapReduceManagerWorker extends MapReduceOrchestrator {
 
     constructor(options) {
         super(options);
         this._server = new ServerEntry({
-            name: options.server.name,
             hostname: options.server.hostname,
             port: options.server.port,
             getMappers: () => this.getMappers(),

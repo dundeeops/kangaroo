@@ -2,9 +2,9 @@ const { pipeline, Transform } = require("stream");
 const {
     serializeData,
 } = require("./Serialization.js");
-const MapReduceBase = require("./MapReduceOrchestrator.js");
+const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
 
-module.exports = class MapReduceManager extends MapReduceBase {
+module.exports = class MapReduceManager extends MapReduceOrchestrator {
 
     constructor(options) {
         super(options);

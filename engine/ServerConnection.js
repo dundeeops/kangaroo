@@ -2,14 +2,14 @@ const { Writable } = require("stream");
 const net = require("net");
 const domain = require("domain");
 const {
+    getServerName,
     deserializeData,
 } = require("./Serialization.js");
 
-const RECONNECT_TIMEOUT = 500;
+const RECONNECT_TIMEOUT = 5000;
 
 module.exports = class ServerConnection {
     constructor(options) {
-        this._name = options.name;
         this._onReceiveInfo = options.onReceiveInfo;
         this._hostname = options.hostname;
         this._port = options.port;
@@ -37,7 +37,7 @@ module.exports = class ServerConnection {
     }
 
     onError(error) {
-        console.error(`Connection failed ${this._name}`, error.message, error.stack);
+        console.error(`Connection failed ${this.getName()}`, error.message, error.stack);
         if (!this._socket) {
             this._isConnecting = false;
             this._isAlive = false;
@@ -46,7 +46,7 @@ module.exports = class ServerConnection {
     }
 
     getName() {
-        return this._name;
+        return getServerName(this._hostname, this._port);
     }
 
     startReconnection() {
@@ -86,7 +86,7 @@ module.exports = class ServerConnection {
             });
 
             socket.on("close", () => {
-                console.log(`Disconnected with ${this._name}`);
+                console.log(`Disconnected with ${this.getName()}`);
                 this._socket = null;
                 this._isConnecting = false;
                 this._isAlive = false;
@@ -94,7 +94,7 @@ module.exports = class ServerConnection {
             });
 
             socket.on("connect", (data) => {
-                console.log(`Connected with ${this._name}`);
+                console.log(`Connected with ${this.getName()}`);
                 this.stopReconnection();
                 this._socket = socket;
                 this.releaseAccumulator();

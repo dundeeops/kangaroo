@@ -2,14 +2,15 @@ const { Readable } = require("stream");
 const net = require("net");
 const domain = require("domain");
 const {
+    getServerName,
     serializeData,
 } = require("./Serialization.js");
+const TimeoutError = require("./TimeoutError.js");
 
-const RESTART_TIMEOUT = 50000;
+const RESTART_TIMEOUT = 5000;
 
 module.exports = class ServerEntry {
     constructor(options) {
-        this._name = options.name;
         this._hostname = options.hostname;
         this._port = options.port;
         this._getMappers = options.getMappers;
@@ -21,10 +22,13 @@ module.exports = class ServerEntry {
         this._restartTimeout = options.restartTimeout || RESTART_TIMEOUT;
         this._domain = domain.create();
         this._domain.on("error", this.onError.bind(this));
+        this._timeoutError = new TimeoutError({
+            message: "TIMEOUT: Error starting a server"
+        });
     }
 
     onError(error) {
-        console.error(`Worker failed ${this._name}`, error.message, error.stack);
+        console.error(`Worker failed ${this.getName()}`, error.message, error.stack);
         if (!this._server) {
             this._isStarting = false;
             this.startRestart();
@@ -32,10 +36,11 @@ module.exports = class ServerEntry {
     }
 
     getName() {
-        return this._name;
+        return getServerName(this._hostname, this._port);
     }
 
     startRestart() {
+        this._timeoutError.start();
         this.stopRestart();
         this._restartInterval = setInterval(() => {
             if (this._shouldRestart) {
@@ -49,6 +54,14 @@ module.exports = class ServerEntry {
             clearInterval(this._restartInterval);
             this._restartInterval = null;
         }
+    }
+
+    async tryRun() {
+        this._timeoutError.start();
+        this._resolve = () => {};
+        this._promise = new Promise((r) => this._resolve = r);
+        this.checkRunning();
+        await this._promise;
     }
 
     checkRunning() {
@@ -68,25 +81,31 @@ module.exports = class ServerEntry {
         this._domain.run(() => {
             this._isStarting = true;
 
-            const server = this.makeServer((socket) => {
-                socket.write(serializeData({
-                    type: "info",
-                    mappers: this._getMappers(),
-                }) + "\n");
-                socket.on("data", (data) => {
-                    this._stream.push(data.toString("utf8"));
-                });
-            }, () => {
-                console.log(`Worker started with ${this._name}`);
-                this.stopRestart();
-                this._server = server;
-                this._isStarting = false;
-            }, () => {
-                console.log(`Worker stopped with ${this._name}`);
-                this._server = null;
-                this._isStarting = false;
-                this.startRestart();
-            });
+            const server = this.makeServer(
+                (socket) => {
+                    socket.write(serializeData({
+                        type: "info",
+                        mappers: this._getMappers(),
+                    }) + "\n");
+                    socket.on("data", (data) => {
+                        this._stream.push(data.toString("utf8"));
+                    });
+                },
+                () => {
+                    console.log(`Worker started with ${this.getName()}`);
+                    this.stopRestart();
+                    this._server = server;
+                    this._isStarting = false;
+                    this._resolve();
+                    this._timeoutError.stop();
+                },
+                () => {
+                    console.log(`Worker stopped with ${this.getName()}`);
+                    this._server = null;
+                    this._isStarting = false;
+                    this.startRestart();
+                },
+            );
 
             return server;
         });

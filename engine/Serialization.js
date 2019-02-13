@@ -7,5 +7,9 @@ module.exports = {
 
     deserializeData(raw) {
         return JSON.parse(raw.toString());
-    }
+    },
+
+    getServerName(hostname, port) {
+        return `${hostname}:${port}`;
+    },
 }

@@ -70,20 +70,20 @@ module.exports = class MapReduceOrchestrator {
             .map((server) => server.getName());
     }
 
-    getNextServer(serverName, stage, key) {
+    getNextServer(preferableServerName, stage, key) {
         const stageKeyHash = this.getHash(stage, key);
         if (
             key != null && this._stageKeyMap[stageKeyHash]
         ) {
             return this._stageKeyMap[stageKeyHash];
         } else {
-            const sorted = this.getServerStageKeySorted(serverName, stage);
+            const sorted = this.getServerStageKeySorted(preferableServerName, stage);
 
             if (sorted.length === 0) {
                 throw Error("There are no alive servers");
             }
 
-            return sorted[0] || serverName;
+            return sorted[0] || preferableServerName;
         }
     }
 
@@ -92,7 +92,9 @@ module.exports = class MapReduceOrchestrator {
             const stageKeyHash = this.getHash(stage, key);
             this._stageKeyMap[stageKeyHash] = serverName;
         }
+
         const serverStageHash = this.getHash(serverName, stage);
+
         if (!this._serverStageMap[serverStageHash]) {
             this._serverStageMap[serverStageHash] = 1;
         } else {
@@ -100,8 +102,8 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
-    push(serverName, session, stage, key, data) {
-        const nextServerName = this.getNextServer(serverName, stage, key);
+    push(preferableServerName, session, stage, key, data) {
+        const nextServerName = this.getNextServer(preferableServerName, stage, key);
         this.setNextServer(nextServerName, stage, key);
         const server = this._serverPool.getServer(nextServerName);
         const raw = serializeData({ session, stage, key, data });

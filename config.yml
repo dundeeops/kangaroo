@@ -1,7 +1,6 @@
-name: "node-1"
+preferableServerName: "127.0.0.1:1337"
 hostname: "127.0.0.1"
 port: 1337
 servers:
-  - name: node-1
-    hostname: "127.0.0.1"
+  - hostname: "127.0.0.1"
     port: 1337
