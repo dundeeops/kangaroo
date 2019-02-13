@@ -4,26 +4,54 @@ const {
 } = require("./Serialization.js");
 const TimeoutError = require("./TimeoutError.js");
 
+const POOLING_TIMEOUT = 5000;
+
 module.exports = class ServerPool {
     constructor(options) {
         this._serversMap = {};
         this._resolvers = [];
         this._resolversMap = {};
         this._servers = [];
-        this._poolServersMap = {};
+        this._poolingServersMap = {};
+        this._poolingInterval = null;
+        this._poolingTimeout = options.poolingTimeout || POOLING_TIMEOUT;
         
-        options.servers.forEach(
+        (options.servers || []).forEach(
             (serverConfig) => this.addServer(
+                serverConfig.hostname,
+                serverConfig.port,
+            ),
+        );
+        
+        (options.poolingServers || []).forEach(
+            (serverConfig) => this.addPoolServer(
                 serverConfig.hostname,
                 serverConfig.port,
             ),
         );
     }
 
-    async connectServerPool() {
+    async startPoolingServers(timeout) {
+        if (!this._poolingInterval) {
+            await this.stickOutPoolServers();
+            this._poolingInterval = setInterval(() => {
+                this.stickOutPoolServers();
+            }, timeout || this._poolingTimeout);
+        }
+    }
+
+    stopPoolingServers() {
+        if (this._poolingInterval) {
+            clearInterval(this._poolingInterval);
+            this._poolingInterval = null;
+        }
+    }
+
+    async connectPoolingServers() {
         const promises = [];
-        for (const { hostname, port } of this._poolServersMap) {
-            const resolve = () => {};
+        for (const name in this._poolingServersMap) {
+            const { hostname, port } = this._poolingServersMap[name];
+            let resolve = () => {};
             const promise = new Promise((r) => resolve = r);
             promises.push(promise);
             let server;
@@ -33,23 +61,22 @@ module.exports = class ServerPool {
                 onReceiveInfo: (info) => {
                     resolve(server);
                 },
-                onError: () => {
-                    r();
+                onError: (error) => {
+                    resolve();
                 },
                 onErrorTimeout: () => {
-                    r();
+                    resolve();
                     server.destroy();
                 }
             });
             server.checkConnection();
         }
-        const serversRaw = await Promise.all(this._resolvers);
-        servers = serversRaw.filter((server) => !!server);
-        return servers;
+        const serversRaw = await Promise.all(promises);
+        return serversRaw.filter((server) => !!server);
     }
 
-    async stickOutPool() {
-        const servers = await this.connectServerPool();
+    async stickOutPoolServers() {
+        const servers = await this.connectPoolingServers();
         servers.forEach((server) => {
             const name = server.getName();
             const hostname = server.getHostname();
@@ -66,24 +93,14 @@ module.exports = class ServerPool {
         });
     }
 
-    moveServerToPool(hostname, port) {
-        this.removeServer(hostname, port);
-        this.addPoolServer(hostname, port);
-    }
-
-    movePoolToServer(hostname, port) {
-        this.removePoolServer(hostname, port);
-        this.addServer(hostname, port);
-    }
-
     removePoolServer(hostname, port) {
         const name = getServerName(hostname, port);
-        delete this._poolServersMap[name];
+        delete this._poolingServersMap[name];
     }
 
     addPoolServer(hostname, port) {
         const name = getServerName(hostname, port);
-        this._poolServersMap[name] = { hostname, port };
+        this._poolingServersMap[name] = { hostname, port };
     }
 
     removeServer(hostname, port) {
@@ -139,6 +156,7 @@ module.exports = class ServerPool {
             server.checkConnection();
         });
         await Promise.all(this._resolvers);
+        await this.startPoolingServers();
         timeout.stop();
     }
 

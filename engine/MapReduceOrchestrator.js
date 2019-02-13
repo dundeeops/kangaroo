@@ -70,7 +70,7 @@ module.exports = class MapReduceOrchestrator {
             .map((server) => server.getName());
     }
 
-    getNextServer(preferableServerName, stage, key) {
+    async getNextServer(preferableServerName, stage, key) {
         const stageKeyHash = this.getHash(stage, key);
         if (
             key != null && this._stageKeyMap[stageKeyHash]
@@ -102,8 +102,8 @@ module.exports = class MapReduceOrchestrator {
         }
     }
 
-    push(preferableServerName, session, stage, key, data) {
-        const nextServerName = this.getNextServer(preferableServerName, stage, key);
+    async push(preferableServerName, session, stage, key, data) {
+        const nextServerName = await this.getNextServer(preferableServerName, stage, key);
         this.setNextServer(nextServerName, stage, key);
         const server = this._serverPool.getServer(nextServerName);
         const raw = serializeData({ session, stage, key, data });

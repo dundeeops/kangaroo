@@ -3,6 +3,9 @@ const argv = require('yargs').argv;
 
 // Engine
 
+// TODO: Implement Error Catching (worker & manager -> connection or stream fail)
+// TODO: Implement AccumulatorStream (using a stacking stream)
+
 const ServerPool = require("./engine/ServerPool.js");
 const MapTransform = require("./engine/MapTransform.js");
 const MapWritable = require("./engine/MapWritable.js");
@@ -13,11 +16,18 @@ const TimeoutError = require("./engine/TimeoutError.js");
 // Initialization
 
 const serverPool = new ServerPool({
-    servers: config.servers
+    poolingServers: config.servers
 });
 
 if (argv.c) {
     argv.c.forEach((name) => {
+        if (typeof name === "string") {
+            const [hostname, port] = name.split(":");
+            serverPool.addServer(hostname, port);
+        }
+    });
+
+    argv.p.forEach((name) => {
         if (typeof name === "string") {
             const [hostname, port] = name.split(":");
             serverPool.addServer(hostname, port);
