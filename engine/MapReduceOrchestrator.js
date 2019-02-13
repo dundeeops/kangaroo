@@ -47,21 +47,27 @@ module.exports = class MapReduceOrchestrator {
     }
 
     getServerStageKeySorted(serverName, stage) {
-        return this._serverPool.getServers().sort((a, b) => {
-            const aServerHash = this.getHash(a.getName(), stage);
-            const aKeyCount = getServerStageKeyCount(aServerHash);
-            const bServerHash = this.getHash(b.getName(), stage);
-            const bKeyCount = getServerStageKeyCount(bServerHash);
-            if (aKeyCount === bKeyCount) {
-                if (a.getName() === serverName) {
-                    return 1;
-                } else if (b.getName() === serverName) {
-                    return -1;
+        return this._serverPool
+            .getServers()
+            .filter((server) => {
+                return server.isContainsStage(stage) && server.isAlive();
+            })
+            .sort((a, b) => {
+                const aServerHash = this.getHash(a.getName(), stage);
+                const aKeyCount = getServerStageKeyCount(aServerHash);
+                const bServerHash = this.getHash(b.getName(), stage);
+                const bKeyCount = getServerStageKeyCount(bServerHash);
+                if (aKeyCount === bKeyCount) {
+                    if (a.getName() === serverName) {
+                        return 1;
+                    } else if (b.getName() === serverName) {
+                        return -1;
+                    }
+                } else {
+                    return aKeyCount < bKeyCount ? 1 : -1;
                 }
-            } else {
-                return aKeyCount < bKeyCount ? 1 : -1;
-            }
-        }).map((server) => server.getName());
+            })
+            .map((server) => server.getName());
     }
 
     getNextServer(serverName, stage, key) {
@@ -72,6 +78,11 @@ module.exports = class MapReduceOrchestrator {
             return this._stageKeyMap[stageKeyHash];
         } else {
             const sorted = this.getServerStageKeySorted(serverName, stage);
+
+            if (sorted.length === 0) {
+                throw Error("There are no alive servers");
+            }
+
             return sorted[0] || serverName;
         }
     }

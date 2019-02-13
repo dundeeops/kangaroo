@@ -1,16 +1,24 @@
 const { Writable } = require("stream");
 const net = require("net");
 const domain = require("domain");
+const {
+    deserializeData,
+} = require("./Serialization.js");
 
 const RECONNECT_TIMEOUT = 500;
 
 module.exports = class ServerConnection {
     constructor(options) {
         this._name = options.name;
+        this._onReceiveInfo = options.onReceiveInfo;
         this._hostname = options.hostname;
         this._port = options.port;
         this._stream = this.makeStream();
         this._socket = null;
+        this._info = {
+            mappers: [],
+        };
+        this._isAlive = false;
         this._isConnecting = false;
         this._accumulation = [];
         this._reconnectionInterval = null;
@@ -20,10 +28,19 @@ module.exports = class ServerConnection {
         this._domain.on("error", this.onError.bind(this));
     }
 
+    isAlive() {
+        return this._isAlive;
+    }
+
+    isContainsStage(stage) {
+        return this._info.mappers.includes(stage);
+    }
+
     onError(error) {
         console.error(`Connection failed ${this._name}`, error.message, error.stack);
         if (!this._socket) {
             this._isConnecting = false;
+            this._isAlive = false;
             this.startReconnection();
         }
     }
@@ -60,14 +77,19 @@ module.exports = class ServerConnection {
 
             const socket = new net.Socket();
     
-            socket.on("data", (data) => {
-                this._stream.push(data.toString("utf8"));
+            socket.on("data", (raw) => {
+                const data = deserializeData(raw.toString());
+                if (data.type === "info") {
+                    this._info.mappers = data.mappers;
+                    this._onReceiveInfo(this._info);
+                }
             });
 
             socket.on("close", () => {
                 console.log(`Disconnected with ${this._name}`);
                 this._socket = null;
                 this._isConnecting = false;
+                this._isAlive = false;
                 this.startReconnection();
             });
 
@@ -77,6 +99,7 @@ module.exports = class ServerConnection {
                 this._socket = socket;
                 this.releaseAccumulator();
                 this._isConnecting = false;
+                this._isAlive = true;
             });
 
             socket.connect(

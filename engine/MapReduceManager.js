@@ -10,7 +10,7 @@ module.exports = class MapReduceManager extends MapReduceBase {
         super(options);
     }
 
-    runManagerStream(stage, stream) {
+    runStream(stage, stream) {
         const session = this.getId();
 
         // TODO: error processing

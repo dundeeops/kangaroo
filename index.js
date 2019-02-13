@@ -3,7 +3,6 @@ const config = require("./Config.js");
 // Engine
 
 const ServerPool = require("./engine/ServerPool.js");
-const ServerEntry = require("./engine/ServerEntry.js");
 const MapTransform = require("./engine/MapTransform.js");
 const MapWritable = require("./engine/MapWritable.js");
 const MapReduceWorker = require("./engine/MapReduceWorker.js");
@@ -15,14 +14,12 @@ const serverPool = new ServerPool({
     servers: config.servers
 });
 
-const server = new ServerEntry({
-    name: config.name,
-    hostname: config.hostname,
-    port: config.port,
-});
-
 const mapReduceWorker = new MapReduceWorker({
-    server,
+    server: {
+        name: config.name,
+        hostname: config.hostname,
+        port: config.port,
+    },
     serverPool,
     preferableServerName: config.name,
 });
@@ -101,27 +98,29 @@ mapReduceWorker.setMap("final", (key) => {
 
 // Run Worker
 
-mapReduceWorker.runWorker();
+mapReduceWorker.run();
 
 // Test Part
 
 const fs = require("fs");
 const path = require("path");
 
-function run() {
-    mapReduceManager.runManagerStream(
+async function run() {
+    await serverPool.run();
+
+    mapReduceManager.runStream(
         "init",
         fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     ).on("finish", () => {
         console.log("The data has been sent!");
     });
-    // mapReduceManager.runManagerStream(
+    // mapReduceManager.runStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     // ).on("finish", () => {
     //     console.log("The data has been sent!");
     // });
-    // mapReduceManager.runManagerStream(
+    // mapReduceManager.runStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     // ).on("finish", () => {

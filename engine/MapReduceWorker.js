@@ -3,21 +3,31 @@ const {
     deserializeData,
 } = require("./Serialization.js");
 const MapReduceBase = require("./MapReduceOrchestrator.js");
+const ServerEntry = require("./ServerEntry.js");
 
 module.exports = class MapReduceManagerWorker extends MapReduceBase {
 
     constructor(options) {
         super(options);
-        this._server = options.server;
+        this._server = new ServerEntry({
+            name: options.server.name,
+            hostname: options.server.hostname,
+            port: options.server.port,
+            getMappers: () => this.getMappers(),
+        });
         this._mappers = {};
         this._stageKeyStreamMap = {};
+    }
+
+    getMappers() {
+        return Object.keys(this._mappers);
     }
 
     setMap(key, callbackStream) {
         this._mappers[key] = callbackStream;
     }
 
-    async runWorker() {
+    async run() {
         this._server.checkRunning();
 
         // TODO: error processing

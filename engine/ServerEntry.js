@@ -1,6 +1,9 @@
 const { Readable } = require("stream");
 const net = require("net");
 const domain = require("domain");
+const {
+    serializeData,
+} = require("./Serialization.js");
 
 const RESTART_TIMEOUT = 50000;
 
@@ -9,6 +12,7 @@ module.exports = class ServerEntry {
         this._name = options.name;
         this._hostname = options.hostname;
         this._port = options.port;
+        this._getMappers = options.getMappers;
         this._stream = this.makeStream();
         this._server = null;
         this._isStarting = false;
@@ -65,6 +69,10 @@ module.exports = class ServerEntry {
             this._isStarting = true;
 
             const server = this.makeServer((socket) => {
+                socket.write(serializeData({
+                    type: "info",
+                    mappers: this._getMappers(),
+                }) + "\n");
                 socket.on("data", (data) => {
                     this._stream.push(data.toString("utf8"));
                 });
