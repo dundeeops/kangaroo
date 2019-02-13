@@ -1,7 +1,6 @@
 const config = require("./Config.js");
 const argv = require('yargs').argv;
 
-console.log(argv);
 // Engine
 
 const ServerPool = require("./engine/ServerPool.js");
@@ -126,6 +125,7 @@ async function run() {
 
     let timeout = new TimeoutError();
     timeout.start("TIMEOUT: Error sending an initial stream");
+
     mapReduceManager.runStream(
         "init",
         fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
@@ -140,6 +140,7 @@ async function run() {
     // ).on("finish", () => {
     //     console.log("The data has been sent!");
     // });
+
     // mapReduceManager.runStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),

@@ -25,6 +25,8 @@ module.exports = class ServerEntry {
         this._timeoutError = new TimeoutError({
             message: "TIMEOUT: Error starting a server"
         });
+        this._resolve = () => {};
+        this._promise = new Promise((r) => this._resolve = r);
     }
 
     onError(error) {
@@ -56,16 +58,14 @@ module.exports = class ServerEntry {
         }
     }
 
-    async tryRun() {
-        this._timeoutError.start();
-        this._resolve = () => {};
-        this._promise = new Promise((r) => this._resolve = r);
+    async runAndWait() {
         this.checkRunning();
         await this._promise;
     }
 
     checkRunning() {
         if (!this._isStarting && !this._server) {
+            this._timeoutError.start();
             this.run();
         }
     }

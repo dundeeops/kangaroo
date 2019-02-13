@@ -27,7 +27,7 @@ module.exports = class MapReduceManagerWorker extends MapReduceOrchestrator {
     }
 
     async run() {
-        this._server.checkRunning();
+        await this._server.runAndWait();
 
         // TODO: error processing
         return pipeline(

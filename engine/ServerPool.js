@@ -10,6 +10,7 @@ module.exports = class ServerPool {
         this._resolvers = [];
         this._resolversMap = {};
         this._servers = [];
+        this._poolServersMap = {};
         
         options.servers.forEach(
             (serverConfig) => this.addServer(
@@ -17,6 +18,72 @@ module.exports = class ServerPool {
                 serverConfig.port,
             ),
         );
+    }
+
+    async connectServerPool() {
+        const promises = [];
+        for (const { hostname, port } of this._poolServersMap) {
+            const resolve = () => {};
+            const promise = new Promise((r) => resolve = r);
+            promises.push(promise);
+            let server;
+            server = new ServerConnection({
+                hostname, port,
+                reconnect: false,
+                onReceiveInfo: (info) => {
+                    resolve(server);
+                },
+                onError: () => {
+                    r();
+                },
+                onErrorTimeout: () => {
+                    r();
+                    server.destroy();
+                }
+            });
+            server.checkConnection();
+        }
+        const serversRaw = await Promise.all(this._resolvers);
+        servers = serversRaw.filter((server) => !!server);
+        return servers;
+    }
+
+    async stickOutPool() {
+        const servers = await this.connectServerPool();
+        servers.forEach((server) => {
+            const name = server.getName();
+            const hostname = server.getHostname();
+            server.setReconnect(true);
+            server.setOnErrorTimeout(() => {
+                this.removeServer(server);
+                this.addPoolServer(hostname, port);
+                server.destroy();
+            })
+            const port = server.getPort();
+            this._servers.push(server);
+            this._serversMap[name] = server;
+            this.removePoolServer(hostname, port);
+        });
+    }
+
+    moveServerToPool(hostname, port) {
+        this.removeServer(hostname, port);
+        this.addPoolServer(hostname, port);
+    }
+
+    movePoolToServer(hostname, port) {
+        this.removePoolServer(hostname, port);
+        this.addServer(hostname, port);
+    }
+
+    removePoolServer(hostname, port) {
+        const name = getServerName(hostname, port);
+        delete this._poolServersMap[name];
+    }
+
+    addPoolServer(hostname, port) {
+        const name = getServerName(hostname, port);
+        this._poolServersMap[name] = { hostname, port };
     }
 
     removeServer(hostname, port) {
@@ -46,11 +113,16 @@ module.exports = class ServerPool {
 
         this._resolvers.push(promise);
 
-        const server = new ServerConnection({
+        let server;
+        server = new ServerConnection({
             hostname, port,
             onReceiveInfo: (info) => {
-                console.log(info);
                 this._resolversMap[name] && this._resolversMap[name].resolve();
+            },
+            onErrorTimeout: () => {
+                this.removeServer(server);
+                this.addPoolServer(hostname, port);
+                server.destroy();
             }
         });
 

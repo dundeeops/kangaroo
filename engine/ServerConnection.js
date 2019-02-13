@@ -7,10 +7,13 @@ const {
 } = require("./Serialization.js");
 
 const RECONNECT_TIMEOUT = 5000;
+const CONNECT_TIMEOUT = 10000;
 
 module.exports = class ServerConnection {
     constructor(options) {
-        this._onReceiveInfo = options.onReceiveInfo;
+        this._onReceiveInfo = options.onReceiveInfo || (() => {});
+        this._onError = options.onError || (() => {});
+        this._onErrorTimeout = options.onErrorTimeout || (() => {});
         this._hostname = options.hostname;
         this._port = options.port;
         this._stream = this.makeStream();
@@ -24,8 +27,33 @@ module.exports = class ServerConnection {
         this._reconnectionInterval = null;
         this._shouldReconnect = options.reconnect != null ? options.reconnect : true;
         this._reconnectTimeout = options.reconnectTimeout || RECONNECT_TIMEOUT;
+        this._connectTimeout = options.connectTimeout || CONNECT_TIMEOUT;
         this._domain = domain.create();
         this._domain.on("error", this.onError.bind(this));
+        this._timeoutError = null;
+    }
+
+    startTimeout() {
+        if (!this._timeoutError) {
+            this._timeoutError = setTimeout(() => {
+                this._onErrorTimeout();
+            }, this._connectTimeout);
+        }
+    }
+
+    stopTimeout() {
+        if (this._timeoutError) {
+            clearTimeout(this._timeoutError);
+        }
+        this._timeoutError = null;
+    }
+
+    setReconnect(value) {
+        this._shouldReconnect = value;
+    }
+
+    setOnErrorTimeout(value) {
+        this._onErrorTimeout = value;
     }
 
     isAlive() {
@@ -38,6 +66,7 @@ module.exports = class ServerConnection {
 
     onError(error) {
         console.error(`Connection failed ${this.getName()}`, error.message, error.stack);
+        this._onError(error);
         if (!this._socket) {
             this._isConnecting = false;
             this._isAlive = false;
@@ -49,7 +78,16 @@ module.exports = class ServerConnection {
         return getServerName(this._hostname, this._port);
     }
 
+    getHostname() {
+        return this._hostname;
+    }
+
+    getPort() {
+        return this._port;
+    }
+
     startReconnection() {
+        this.startTimeout();
         this.stopReconnection();
         this._reconnectionInterval = setInterval(() => {
             if (this._shouldReconnect) {
@@ -67,11 +105,12 @@ module.exports = class ServerConnection {
 
     checkConnection() {
         if (!this._isConnecting && !this._socket) {
+            this.startTimeout();
             this.connect();
         }
     }
 
-    connect() {
+    async connect() {
         this._domain.run(() => {
             this._isConnecting = true;
 
@@ -80,8 +119,12 @@ module.exports = class ServerConnection {
             socket.on("data", (raw) => {
                 const data = deserializeData(raw.toString());
                 if (data.type === "info") {
+                    this.stopTimeout();
                     this._info.mappers = data.mappers;
                     this._onReceiveInfo(this._info);
+                } else if (!this._info) {
+                    this.destroy();
+                    throw new Error(`Connection failed, expected info ${this.getName()}`);
                 }
             });
 
