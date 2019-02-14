@@ -81,7 +81,8 @@ module.exports = class ServerEntry {
         this._domain.run(() => {
             this._isStarting = true;
 
-            const server = this.makeServer(
+            let server;
+            server = this.makeServer(
                 (socket) => {
                     socket.write(serializeData({
                         type: "info",
