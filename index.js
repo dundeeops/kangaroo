@@ -13,6 +13,17 @@ const MapReduceWorker = require("./engine/MapReduceWorker.js");
 const MapReduceManager = require("./engine/MapReduceManager.js");
 const TimeoutError = require("./engine/TimeoutError.js");
 
+// Exit if "entrr" or "q" are pressed
+
+const readline = require("readline");
+readline.emitKeypressEvents(process.stdin);
+process.stdin.setRawMode(true);
+process.stdin.on("keypress", (str, key) => {
+    if (key.name === "q" || key.name === "return") {
+        process.exit();
+    }
+});
+
 // Initialization
 
 const serverPool = new ServerPool({
@@ -81,14 +92,6 @@ mapReduceWorker.setMap("init", (key) => {
     });
 });
 
-const readline = require("readline");
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-let count = 0;
-
 mapReduceWorker.setMap("final", (key) => {
     let sum = "";
     return new MapWritable({
@@ -101,22 +104,8 @@ mapReduceWorker.setMap("final", (key) => {
         final(callback) {
             console.log(sum);
             console.log("The data has been processed!", key);
-            count++;
 
             callback();
-
-            if (count === 2) {
-                process.exit();
-
-                // rl.question("\n", (answer) => {
-                //     if (answer === "r") {
-                //         run();
-                //     } else {
-                //         rl.close();
-                //         process.exit();
-                //     }
-                // });
-            }
         }
     });
 });
