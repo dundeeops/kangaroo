@@ -1,19 +1,23 @@
 const Etcd = require("node-etcd");
-const bluebird = require("bluebird");
-bluebird.promisifyAll(Etcd.prototype);
 const {
-    serializeData,
-    deserializeData,
-} = require("./SerializationUtil.js");
+    promisify,
+} = require("./PromisifyUtil.js");
+promisify(Etcd.prototype, ["set", "get", "del", "rmdir"]);
+// const {
+//     serializeData,
+//     deserializeData,
+// } = require("./SerializationUtil.js");
 
 const DIR = "/noremap";
+const SERVERS_KEY = "servers";
+const STREAMS_KEY = "streams";
 
 module.exports = class DiscoveryService {
 
     constructor(options) {
         this._connection = null;
         this._dir = options.dir || DIR;
-        this._etcd = new Etcd(options.hosts);
+        this._etcd = new Etcd(options.hosts, options);
     }
 
     getKey(key) {
@@ -21,58 +25,72 @@ module.exports = class DiscoveryService {
     }
 
     getPath(...args) {
-        return args.join("/");
-    }
-
-    getStreamServerPath(session, stage, key) {
-        return this.getPath("streams", session, stage, key, "server");
-    }
-
-    getValue(result) {
-        return result.node.value;
+        return this.getKey(args.join("/"));
     }
 
     async getStreamServer(session, stage, key) {
-        const path = this.getStreamServerPath(session, stage, key);
-        return this.getValue(await this._get(this.getKey(path)));
+        try {
+            const path = this.getPath(STREAMS_KEY, session, stage, key);
+            return await _etcd.getAsync(path).node.value;
+        } catch (error) {
+            this.checkNotFoundKeyError(error);
+            return null;
+        }
     }
 
     async setStreamServer(session, stage, key, server) {
-        const path = this.getStreamServerPath(session, stage, key);
-        this._set(this.getKey(path), server);
+        const path = this.getPath(STREAMS_KEY, session, stage, key);
+        this._etcd.setAsync(path, server);
     }
 
     async getServers() {
-        return deserializeData(
-            this.getValue(
-                await this._get(this.getKey("servers")),
-            ),
-        );
+        try {
+            const nodes = (
+                await this._etcd.getAsync(this.getPath(SERVERS_KEY), { dir: true })
+            ).node.nodes || [];
+            return nodes.map((node) => node.value);
+        } catch (error) {
+            this.checkNotFoundKeyError(error);
+            return [];
+        }
     }
 
     async registerServer(server) {
-        const servers = await this.getServers();
-        servers.push(server);
-        await this._set(this.getKey("servers"), servers);
+        await this._etcd.setAsync(this.getPath(SERVERS_KEY, server), server);
     }
 
     async removeServer(server) {
-        const servers = await this.getServers();
-        const index = servers.indexOf(server);
-        if (index > -1) {
-            servers.splice(index, 1);
+        try {
+            await this._etcd.delAsync(this.getPath(SERVERS_KEY, server));
+        } catch (error) {
+            this.checkNotFoundKeyError(error);
         }
-        await this._set(this.getKey("servers"), serializeData(servers));
     }
 
-    async test() {
-        await this._etcd.setSync(this.getKey("servers/test"), "testtest");
-        await this._etcd.setSync(this.getKey("servers/abc"), "testtest");
-        console.log(JSON.stringify(await this._etcd.getSync(this.getKey("servers")), null, 4));
-        await this.clean("servers");
+    checkNotFoundKeyError(error) {
+        if (error.errorCode !== 100) {
+            throw error;
+        }
+    }
+
+    async cleanServers() {
+        await this.clean(this.getPath(SERVERS_KEY));
     }
 
     async clean(path) {
-        await this._etcd.rmdirSync(this.getPath(path), { recursive: true });
+        try {
+            this._etcd.rmdirAsync(path, { recursive: true });
+        } catch (error) {
+            this.checkNotFoundKeyError(error);
+        }
+    }
+
+    async deleteRecursive(node) {
+        if (node.nodes) {
+            for (let n of node.nodes) {
+                await this.delete(n);
+            }
+        }
+        await this._etcd.delAsync(node.key, { dir: node.dir, recursive: node.dir });
     }
 }

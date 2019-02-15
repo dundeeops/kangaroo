@@ -2,7 +2,10 @@
 const DiscoveryService = require("./engine/DiscoveryService");
 
 ds = new DiscoveryService({
-    hosts: "http://127.0.0.1:2379",
+    hosts: "http://10.24.70.21:2379",
+    ttl: 1,
+    maxRetries: 10,
+    timeout: 3000,
 });
 
 ds.test();

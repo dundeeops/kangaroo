@@ -5,7 +5,7 @@ docker run -d --restart unless-stopped \
     -p 2379:2379 \
     -p 4001:4001 \
     --name etcd \
-    quay.io/coreos/etcd:v2.3.0 \
+    127.0.0.1:5000/elcolio/etcd:latest \
     -listen-client-urls http://0.0.0.0:2379,http://0.0.0.0:4001 -advertise-client-urls http://0.0.0.0:2379,http://0.0.0.0:4001
 ```
 ```
