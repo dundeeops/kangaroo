@@ -1,5 +1,6 @@
-const { Etcd3 } = require("etcd3");
-// bluebird.promisifyAll(Etcd.prototype);
+const Etcd = require("node-etcd");
+const bluebird = require("bluebird");
+bluebird.promisifyAll(Etcd.prototype);
 const {
     serializeData,
     deserializeData,
@@ -12,7 +13,7 @@ module.exports = class DiscoveryService {
     constructor(options) {
         this._connection = null;
         this._dir = options.dir || DIR;
-        this._etcd = new Etcd3(options);
+        this._etcd = new Etcd(options.hosts);
     }
 
     getKey(key) {
@@ -65,15 +66,13 @@ module.exports = class DiscoveryService {
     }
 
     async test() {
-        await this._etcd.put('foo').value('bar');
-        console.log('foo is:', await this._etcd.get('foo').string());
-        // await this._set(this.getKey("servers/test"), "testtest");
-        // await this._set(this.getKey("servers/abc"), "testtest");
-        // console.log(await this._get(this.getKey("servers")));
-        // await this.clean("servers");
+        await this._etcd.setSync(this.getKey("servers/test"), "testtest");
+        await this._etcd.setSync(this.getKey("servers/abc"), "testtest");
+        console.log(JSON.stringify(await this._etcd.getSync(this.getKey("servers")), null, 4));
+        await this.clean("servers");
     }
 
     async clean(path) {
-        await this._rmdir(this.getPath(path), { recursive: true });
+        await this._etcd.rmdirSync(this.getPath(path), { recursive: true });
     }
 }
