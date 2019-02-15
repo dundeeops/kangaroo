@@ -6,12 +6,12 @@ const argv = require('yargs').argv;
 // TODO: Implement Error Catching (worker & manager -> connection or stream fail)
 // TODO: Implement AccumulatorStream (using a stacking stream)
 
-const ServerPool = require("./engine/ServerPool.js");
-const MapTransform = require("./engine/MapTransform.js");
-const MapWritable = require("./engine/MapWritable.js");
-const MapReduceWorker = require("./engine/MapReduceWorker.js");
-const MapReduceManager = require("./engine/MapReduceManager.js");
-const TimeoutError = require("./engine/TimeoutError.js");
+const ConnectionService = require("./engine/ConnectionService.js");
+const MapTransform = require("./engine/MapTransformStream.js");
+const MapWritable = require("./engine/MapWritableStream.js");
+const WorkerService = require("./engine/WorkerService.js");
+const ManagerService = require("./engine/ManagerService.js");
+const TimeoutErrorTimer = require("./engine/TimeoutErrorTimer.js");
 
 // Exit if "entrr" or "q" are pressed
 
@@ -26,7 +26,7 @@ process.stdin.on("keypress", (str, key) => {
 
 // Initialization
 
-const serverPool = new ServerPool({
+const serverPool = new ConnectionService({
     poolingServers: config.servers
 });
 
@@ -46,7 +46,7 @@ if (argv.c) {
     });
 }
 
-const mapReduceWorker = new MapReduceWorker({
+const worker = new WorkerService({
     server: {
         hostname: config.hostname,
         port: config.port,
@@ -55,14 +55,14 @@ const mapReduceWorker = new MapReduceWorker({
     preferableServerName: config.preferableServerName,
 });
 
-const mapReduceManager = new MapReduceManager({
+const manager = new ManagerService({
     serverPool,
     preferableServerName: config.preferableServerName,
 });
 
 // Mapping
 
-mapReduceWorker.setMap("init", (key) => {
+worker.setStream("init", (key) => {
     let state = false;
     return new MapTransform({
         transform(chunk, encoding, callback) {
@@ -92,7 +92,7 @@ mapReduceWorker.setMap("init", (key) => {
     });
 });
 
-mapReduceWorker.setMap("final", (key) => {
+worker.setStream("final", (key) => {
     let sum = "";
     return new MapWritable({
         write(chunk, encoding, callback) {
@@ -112,7 +112,7 @@ mapReduceWorker.setMap("final", (key) => {
 
 // Run Worker
 
-mapReduceWorker.run();
+worker.run();
 
 // Test Part
 
@@ -122,10 +122,10 @@ const path = require("path");
 async function run() {
     await serverPool.run();
 
-    let timeout = new TimeoutError();
+    let timeout = new TimeoutErrorTimer();
     timeout.start("TIMEOUT: Error sending an initial stream");
 
-    mapReduceManager.runStream(
+    manager.runStream(
         "init",
         fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     ).on("finish", () => {
@@ -133,14 +133,22 @@ async function run() {
         timeout.stop();
     });
 
-    // mapReduceManager.runStream(
+    // manager.runStream(
+    //     "init",
+    //     process.stdin,
+    // ).on("finish", () => {
+    //     console.log("The data has been sent!");
+    //     timeout.stop();
+    // });
+
+    // manager.runStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     // ).on("finish", () => {
     //     console.log("The data has been sent!");
     // });
 
-    // mapReduceManager.runStream(
+    // manager.runStream(
     //     "init",
     //     fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
     // ).on("finish", () => {

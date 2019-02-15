@@ -4,12 +4,12 @@ const domain = require("domain");
 const {
     getServerName,
     serializeData,
-} = require("./Serialization.js");
-const TimeoutError = require("./TimeoutError.js");
+} = require("./SerializationUtil.js");
+const TimeoutError = require("./TimeoutErrorTimer.js");
 
 const RESTART_TIMEOUT = 5000;
 
-module.exports = class ServerEntry {
+module.exports = class WorkerServer {
     constructor(options) {
         this._hostname = options.hostname;
         this._port = options.port;
@@ -20,11 +20,14 @@ module.exports = class ServerEntry {
         this._restartInterval = null;
         this._shouldRestart = options.restart != null ? options.restart : true;
         this._restartTimeout = options.restartTimeout || RESTART_TIMEOUT;
+
         this._domain = domain.create();
         this._domain.on("error", this.onError.bind(this));
+
         this._timeoutError = new TimeoutError({
             message: "TIMEOUT: Error starting a server"
         });
+
         this._resolve = () => {};
         this._promise = new Promise((r) => this._resolve = r);
     }

@@ -2,9 +2,9 @@ const { Writable } = require("stream");
 const { StringDecoder } = require("string_decoder");
 const {
     deserializeData,
-} = require("./Serialization.js");
+} = require("./SerializationUtil.js");
 
-module.exports = class SendToProcessWritable extends Writable {
+module.exports = class SendWritableStream extends Writable {
     constructor(options) {
         super(options);
         this._decoder = new StringDecoder(options.defaultEncoding);

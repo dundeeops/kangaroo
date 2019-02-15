@@ -1,7 +1,7 @@
 const { Transform } = require("stream");
 const { StringDecoder } = require("string_decoder");
 
-module.exports = class StringToLinesTransform extends Transform {
+module.exports = class EventStreamTransformStream extends Transform {
     constructor(options) {
         super(options);
         this._decoder = new StringDecoder(options && options.defaultEncoding);

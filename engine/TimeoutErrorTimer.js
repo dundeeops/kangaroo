@@ -1,7 +1,7 @@
 const TIMEOUT = 10000;
 const TIMEOUT_MESSAGE = "TIMEOUT ERROR";
 
-module.exports = class TimeoutError {
+module.exports = class TimeoutErrorTimer {
     constructor(options) {
         this._timeout = null;
         this._timeoutInterval = (options && options.timeout) || TIMEOUT;

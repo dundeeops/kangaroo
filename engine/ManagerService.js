@@ -1,17 +1,18 @@
 const { pipeline, Transform } = require("stream");
 const {
     serializeData,
-} = require("./Serialization.js");
-const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
+    getId,
+} = require("./SerializationUtil.js");
+const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
 
-module.exports = class MapReduceManager extends MapReduceOrchestrator {
+module.exports = class ManagerService extends OrchestratorServicePrototype {
 
     constructor(options) {
         super(options);
     }
 
     runStream(stage, stream) {
-        const session = this.getId();
+        const session = getId();
 
         // TODO: error processing
         return pipeline(

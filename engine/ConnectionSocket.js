@@ -4,12 +4,12 @@ const domain = require("domain");
 const {
     getServerName,
     deserializeData,
-} = require("./Serialization.js");
+} = require("./SerializationUtil.js");
 
 const RECONNECT_TIMEOUT = 5000;
 const CONNECT_TIMEOUT = 10000;
 
-module.exports = class ServerConnection {
+module.exports = class ConnectionSocket {
     constructor(options) {
         this._onReceiveInfo = options.onReceiveInfo || (() => {});
         this._onError = options.onError || (() => {});

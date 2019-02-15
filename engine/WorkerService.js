@@ -1,15 +1,16 @@
 const { pipeline, Writable, Readable } = require("stream");
 const {
     deserializeData,
-} = require("./Serialization.js");
-const MapReduceOrchestrator = require("./MapReduceOrchestrator.js");
-const ServerEntry = require("./ServerEntry.js");
+    getHash,
+} = require("./SerializationUtil.js");
+const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
+const WorkerServer = require("./WorkerServer.js");
 
-module.exports = class MapReduceManagerWorker extends MapReduceOrchestrator {
+module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     constructor(options) {
         super(options);
-        this._server = new ServerEntry({
+        this._server = options.serverInstance || new WorkerServer({
             hostname: options.server.hostname,
             port: options.server.port,
             getMappers: () => this.getMappers(),
@@ -22,7 +23,7 @@ module.exports = class MapReduceManagerWorker extends MapReduceOrchestrator {
         return Object.keys(this._mappers);
     }
 
-    setMap(key, callbackStream) {
+    setStream(key, callbackStream) {
         this._mappers[key] = callbackStream;
     }
 
@@ -48,7 +49,7 @@ module.exports = class MapReduceManagerWorker extends MapReduceOrchestrator {
             write(chunk, encoding, callback) {
                 const raw = chunk.toString();
                 const { session, stage, key, data } = deserializeData(raw);
-                const hash = mapReduceOrchestrator.getHash(session, stage, key);
+                const hash = getHash(session, stage, key);
                 if (data) {
                     const stream = mapReduceOrchestrator.getStageKeyStreamOrCreate(hash, session, stage, key);
                     stream.push(raw);

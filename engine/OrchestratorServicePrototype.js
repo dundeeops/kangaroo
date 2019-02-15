@@ -1,13 +1,11 @@
-const crypto = require("crypto");
-const SendToProcessWritable = require("./SendToProcessWritable.js");
-const StringToLinesTransform = require("./StringToLinesTransform.js");
+const SendWritableStream = require("./SendWritableStream.js");
+const EventStreamTransformStream = require("./EventStreamTransformStream.js");
 const {
     serializeData,
-} = require("./Serialization.js");
+    getHash,
+} = require("./SerializationUtil.js");
 
-const separator = ":_:";
-
-module.exports = class MapReduceOrchestrator {
+module.exports = class OrchestratorServicePrototype {
 
     constructor(options) {
         this._serverPool = options.serverPool;
@@ -17,15 +15,7 @@ module.exports = class MapReduceOrchestrator {
     }
 
     getLinesStream() {
-        return new StringToLinesTransform();
-    }
-
-    getHash(...args) {
-        return crypto.createHash('sha1').update(args.join(separator)).digest('base64');
-    }
-
-    getId() {
-        return this.getHash(Math.random().toString())
+        return new EventStreamTransformStream();
     }
 
     errorProcessing(err) {
@@ -35,7 +25,7 @@ module.exports = class MapReduceOrchestrator {
     }
 
     getOutcomeStream(session, stage, key) {
-        return new SendToProcessWritable({
+        return new SendWritableStream({
             send: this.push.bind(this),
             serverName: this._preferableServerName,
             session, stage, key,
@@ -53,9 +43,9 @@ module.exports = class MapReduceOrchestrator {
                 return server.isContainsStage(stage) && server.isAlive();
             })
             .sort((a, b) => {
-                const aServerHash = this.getHash(a.getName(), stage);
+                const aServerHash = getHash(a.getName(), stage);
                 const aKeyCount = getServerStageKeyCount(aServerHash);
-                const bServerHash = this.getHash(b.getName(), stage);
+                const bServerHash = getHash(b.getName(), stage);
                 const bKeyCount = getServerStageKeyCount(bServerHash);
                 if (aKeyCount === bKeyCount) {
                     if (a.getName() === serverName) {
@@ -71,7 +61,7 @@ module.exports = class MapReduceOrchestrator {
     }
 
     async getNextServer(preferableServerName, stage, key) {
-        const stageKeyHash = this.getHash(stage, key);
+        const stageKeyHash = getHash(stage, key);
         if (
             key != null && this._stageKeyMap[stageKeyHash]
         ) {
@@ -89,11 +79,11 @@ module.exports = class MapReduceOrchestrator {
 
     setNextServer(serverName, stage, key) {
         if (key != null) {
-            const stageKeyHash = this.getHash(stage, key);
+            const stageKeyHash = getHash(stage, key);
             this._stageKeyMap[stageKeyHash] = serverName;
         }
 
-        const serverStageHash = this.getHash(serverName, stage);
+        const serverStageHash = getHash(serverName, stage);
 
         if (!this._serverStageMap[serverStageHash]) {
             this._serverStageMap[serverStageHash] = 1;

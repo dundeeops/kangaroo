@@ -4,8 +4,11 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
+    "bluebird": "^3.5.3",
+    "etcd3": "^0.2.11",
+    "fast-safe-stringify": "^2.0.6",
     "js-yaml": "^3.12.1",
-    "yargs": "^12.0.5",
-    "fast-safe-stringify": "^2.0.6"
+    "node-etcd": "^7.0.0",
+    "yargs": "^12.0.5"
   }
 }

@@ -2,9 +2,9 @@ const { Transform } = require("stream");
 const {
     deserializeData,
     serializeData,
-} = require("./Serialization.js");
+} = require("./SerializationUtil.js");
 
-module.exports = class MapTransform extends Transform {
+module.exports = class MapTransformStream extends Transform {
     constructor(options) {
         super(options);
     }

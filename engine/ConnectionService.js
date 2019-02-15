@@ -1,12 +1,12 @@
-const ServerConnection = require("./ServerConnection.js");
+const ConnectionSocket = require("./ConnectionSocket.js");
 const {
     getServerName,
-} = require("./Serialization.js");
-const TimeoutError = require("./TimeoutError.js");
+} = require("./SerializationUtil.js");
+const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 const POOLING_TIMEOUT = 5000;
 
-module.exports = class ServerPool {
+module.exports = class ConnectionService {
     constructor(options) {
         this._serversMap = {};
         this._resolvers = [];
@@ -55,7 +55,7 @@ module.exports = class ServerPool {
             const promise = new Promise((r) => resolve = r);
             promises.push(promise);
             let server;
-            server = new ServerConnection({
+            server = new ConnectionSocket({
                 hostname, port,
                 reconnect: false,
                 onReceiveInfo: (info) => {
@@ -131,7 +131,7 @@ module.exports = class ServerPool {
         this._resolvers.push(promise);
 
         let server;
-        server = new ServerConnection({
+        server = new ConnectionSocket({
             hostname, port,
             onReceiveInfo: (info) => {
                 this._resolversMap[name] && this._resolversMap[name].resolve();
@@ -150,7 +150,7 @@ module.exports = class ServerPool {
     }
 
     async run() {
-        const timeout = new TimeoutError();
+        const timeout = new TimeoutErrorTimer();
         timeout.start("TIMEOUT: Error connecting with workers");
         this._servers.forEach((server) => {
             server.checkConnection();

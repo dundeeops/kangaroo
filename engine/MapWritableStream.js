@@ -1,9 +1,9 @@
 const { Writable } = require("stream");
 const {
     deserializeData,
-} = require("./Serialization.js");
+} = require("./SerializationUtil.js");
 
-module.exports = class MapWritable extends Writable {
+module.exports = class MapWritableStream extends Writable {
     constructor(options) {
         super(options);
     }
