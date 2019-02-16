@@ -57,19 +57,21 @@ module.exports = class ConnectionService {
             let server;
             server = new ConnectionSocket({
                 hostname, port,
-                reconnect: false,
                 onReceiveInfo: (info) => {
                     resolve(server);
                 },
                 onError: (error) => {
                     resolve();
                 },
-                onErrorTimeout: () => {
-                    resolve();
-                    server.destroy();
-                }
+                restart: {
+                    restart: false,
+                    onErrorTimeout: () => {
+                        resolve();
+                        server.destroy();
+                    },
+                },
             });
-            server.checkConnection();
+            server.connect();
         }
         const serversRaw = await Promise.all(promises);
         return serversRaw.filter((server) => !!server);
@@ -80,7 +82,7 @@ module.exports = class ConnectionService {
         servers.forEach((server) => {
             const name = server.getName();
             const hostname = server.getHostname();
-            server.setReconnect(true);
+            server.setRestart(true);
             server.setOnErrorTimeout(() => {
                 this.removeServer(server);
                 this.addPoolServer(hostname, port);
@@ -136,11 +138,12 @@ module.exports = class ConnectionService {
             onReceiveInfo: (info) => {
                 this._resolversMap[name] && this._resolversMap[name].resolve();
             },
-            onErrorTimeout: () => {
-                this.removeServer(server);
-                this.addPoolServer(hostname, port);
-                server.destroy();
-            }
+            restart: {
+                onErrorTimeout: () => {
+                    resolve();
+                    server.destroy();
+                },
+            },
         });
 
         this._serversMap[name] = server;
@@ -153,7 +156,7 @@ module.exports = class ConnectionService {
         const timeout = new TimeoutErrorTimer();
         timeout.start("TIMEOUT: Error connecting with workers");
         this._servers.forEach((server) => {
-            server.checkConnection();
+            server.connect();
         });
         await Promise.all(this._resolvers);
         await this.startPoolingServers();

@@ -5,73 +5,50 @@ const {
     getServerName,
     deserializeData,
 } = require("./SerializationUtil.js");
-
-const RECONNECT_TIMEOUT = 5000;
-const CONNECT_TIMEOUT = 10000;
+const RestartService = require("./RestartService.js");
 
 module.exports = class ConnectionSocket {
     constructor(options) {
         this._onReceiveInfo = options.onReceiveInfo || (() => {});
         this._onError = options.onError || (() => {});
-        this._onErrorTimeout = options.onErrorTimeout || (() => {});
         this._hostname = options.hostname;
         this._port = options.port;
-        this._stream = this.makeStream();
+
         this._socket = null;
+        this._stream = this.makeStream();
         this._info = {
             mappers: [],
         };
-        this._isAlive = false;
-        this._isConnecting = false;
         this._accumulation = [];
-        this._reconnectionInterval = null;
-        this._shouldReconnect = options.reconnect != null ? options.reconnect : true;
-        this._reconnectTimeout = options.reconnectTimeout || RECONNECT_TIMEOUT;
-        this._connectTimeout = options.connectTimeout || CONNECT_TIMEOUT;
-        this._domain = domain.create();
-        this._domain.on("error", this.onError.bind(this));
-        this._timeoutError = null;
-    }
 
-    startTimeout() {
-        if (!this._timeoutError) {
-            this._timeoutError = setTimeout(() => {
-                this._onErrorTimeout();
-            }, this._connectTimeout);
-        }
-    }
-
-    stopTimeout() {
-        if (this._timeoutError) {
-            clearTimeout(this._timeoutError);
-        }
-        this._timeoutError = null;
-    }
-
-    setReconnect(value) {
-        this._shouldReconnect = value;
-    }
-
-    setOnErrorTimeout(value) {
-        this._onErrorTimeout = value;
+        this._service = new RestartService({
+            onError: this.onError.bind(this),
+            run: this.run.bind(this),
+            isAlive: this.isAlive.bind(this),
+            timeoutErrorMessage: `TIMEOUT: Error connecting with a server ${this._hostname}:${this._port}`,
+            ...options.restart,
+        });
     }
 
     isAlive() {
-        return this._isAlive;
-    }
-
-    isContainsStage(stage) {
-        return this._info.mappers.includes(stage);
+        return !!this._socket;
     }
 
     onError(error) {
         console.error(`Connection failed ${this.getName()}`, error.message, error.stack);
         this._onError(error);
-        if (!this._socket) {
-            this._isConnecting = false;
-            this._isAlive = false;
-            this.startReconnection();
-        }
+    }
+
+    setRestart(value) {
+        this._service.setRestart(value);
+    }
+
+    setOnErrorTimeout(value) {
+        this._service.setOnErrorTimeout(value);
+    }
+
+    isContainsStage(stage) {
+        return this._info.mappers.includes(stage);
     }
 
     getName() {
@@ -86,72 +63,40 @@ module.exports = class ConnectionSocket {
         return this._port;
     }
 
-    startReconnection() {
-        this.startTimeout();
-        this.stopReconnection();
-        this._reconnectionInterval = setInterval(() => {
-            if (this._shouldReconnect) {
-                this.checkConnection();
-            }
-        }, this._reconnectTimeout);
+    connect() {
+        this._service.start();
     }
 
-    stopReconnection() {
-        if (this._reconnectionInterval) {
-            clearInterval(this._reconnectionInterval);
-            this._reconnectionInterval = null;
-        }
-    }
+    async run(callback) {
+        const socket = new net.Socket();
 
-    checkConnection() {
-        if (!this._isConnecting && !this._socket) {
-            this.startTimeout();
-            this.connect();
-        }
-    }
-
-    async connect() {
-        this._domain.run(() => {
-            this._isConnecting = true;
-
-            const socket = new net.Socket();
-    
-            socket.on("data", (raw) => {
-                const data = deserializeData(raw.toString());
-                if (data.type === "info") {
-                    this.stopTimeout();
-                    this._info.mappers = data.mappers;
-                    this._onReceiveInfo(this._info);
-                } else if (!this._info) {
-                    this.destroy();
-                    throw new Error(`Connection failed, expected info ${this.getName()}`);
-                }
-            });
-
-            socket.on("close", () => {
-                console.log(`Disconnected with ${this.getName()}`);
-                this._socket = null;
-                this._isConnecting = false;
-                this._isAlive = false;
-                this.startReconnection();
-            });
-
-            socket.on("connect", (data) => {
-                console.log(`Connected with ${this.getName()}`);
-                this.stopReconnection();
+        socket.on("data", (raw) => {
+            const data = deserializeData(raw.toString());
+            if (data.type === "info") {
                 this._socket = socket;
+                this._info.mappers = data.mappers;
+                callback();
+                this._onReceiveInfo(this._info);
                 this.releaseAccumulator();
-                this._isConnecting = false;
-                this._isAlive = true;
-            });
-
-            socket.connect(
-                this._port,
-                this._hostname
-            );
-
-            return socket;
+            }
         });
+
+        socket.on("close", () => {
+            console.log(`Disconnected with ${this.getName()}`);
+            this._socket = null;
+            callback();
+        });
+
+        socket.on("connect", () => {
+            console.log(`Connected with ${this.getName()}`);
+        });
+
+        socket.connect(
+            this._port,
+            this._hostname
+        );
+
+        return socket;
     }
 
     makeStream() {
@@ -187,7 +132,7 @@ module.exports = class ConnectionSocket {
     }
 
     push(data) {
-        this.checkConnection();
+        this._service.start();
 
         if (!this._socket || this._accumulation.length > 0) {
             return this.pushAccumulator(data);
