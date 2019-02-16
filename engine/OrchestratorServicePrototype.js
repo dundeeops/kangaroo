@@ -8,9 +8,9 @@ const {
 module.exports = class OrchestratorServicePrototype {
 
     constructor(options) {
-        this._serverPool = options.serverPool;
+        this._connectionService = options.connectionService;
         this._preferableServerName = options.preferableServerName;
-        this._serverStageMap = {};
+        this._connectionStageMap = {};
         this._stageKeyMap = {};
     }
 
@@ -33,12 +33,12 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     getServerStageKeyCount(serverStageHash) {
-        return this._serverStageMap[serverStageHash] || 0;
+        return this._connectionStageMap[serverStageHash] || 0;
     }
 
     getServerStageKeySorted(serverName, stage) {
-        return this._serverPool
-            .getServers()
+        return this._connectionService
+            .getConnections()
             .filter((server) => {
                 return server.isContainsStage(stage) && server.isAlive();
             })
@@ -85,17 +85,17 @@ module.exports = class OrchestratorServicePrototype {
 
         const serverStageHash = getHash(serverName, stage);
 
-        if (!this._serverStageMap[serverStageHash]) {
-            this._serverStageMap[serverStageHash] = 1;
+        if (!this._connectionStageMap[serverStageHash]) {
+            this._connectionStageMap[serverStageHash] = 1;
         } else {
-            this._serverStageMap[serverStageHash]++;
+            this._connectionStageMap[serverStageHash]++;
         }
     }
 
     async push(preferableServerName, session, stage, key, data) {
         const nextServerName = await this.getNextServer(preferableServerName, stage, key);
         this.setNextServer(nextServerName, stage, key);
-        const server = this._serverPool.getServer(nextServerName);
+        const server = this._connectionService.getConnection(nextServerName);
         const raw = serializeData({ session, stage, key, data });
         server.sendData(raw + "\n");
     }

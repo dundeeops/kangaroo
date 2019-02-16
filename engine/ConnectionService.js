@@ -8,57 +8,57 @@ const POOLING_TIMEOUT = 5000;
 
 module.exports = class ConnectionService {
     constructor(options) {
-        this._serversMap = {};
+        this._connectionsMap = {};
         this._resolvers = [];
         this._resolversMap = {};
-        this._servers = [];
-        this._poolingServersMap = {};
+        this._connections = [];
+        this._poolingConnectionsMap = {};
         this._poolingInterval = null;
         this._poolingTimeout = options.poolingTimeout || POOLING_TIMEOUT;
         
-        (options.servers || []).forEach(
-            (serverConfig) => this.addServer(
-                serverConfig.hostname,
-                serverConfig.port,
+        (options.connections || []).forEach(
+            (connectionConfig) => this.addConnection(
+                connectionConfig.hostname,
+                connectionConfig.port,
             ),
         );
         
-        (options.poolingServers || []).forEach(
-            (serverConfig) => this.addPoolServer(
-                serverConfig.hostname,
-                serverConfig.port,
+        (options.poolingConnections || []).forEach(
+            (connectionConfig) => this.addPoolConnection(
+                connectionConfig.hostname,
+                connectionConfig.port,
             ),
         );
     }
 
-    async startPoolingServers(timeout) {
+    async startPoolingConnections(timeout) {
         if (!this._poolingInterval) {
-            await this.stickOutPoolServers();
+            await this.stickOutPoolConnections();
             this._poolingInterval = setInterval(() => {
-                this.stickOutPoolServers();
+                this.stickOutPoolConnections();
             }, timeout || this._poolingTimeout);
         }
     }
 
-    stopPoolingServers() {
+    stopPoolingConnections() {
         if (this._poolingInterval) {
             clearInterval(this._poolingInterval);
             this._poolingInterval = null;
         }
     }
 
-    async connectPoolingServers() {
+    async connectPoolingConnections() {
         const promises = [];
-        for (const name in this._poolingServersMap) {
-            const { hostname, port } = this._poolingServersMap[name];
+        for (const name in this._poolingConnectionsMap) {
+            const { hostname, port } = this._poolingConnectionsMap[name];
             let resolve = () => {};
             const promise = new Promise((r) => resolve = r);
             promises.push(promise);
-            let server;
-            server = new ConnectionSocket({
+            let connection;
+            connection = new ConnectionSocket({
                 hostname, port,
                 onReceiveInfo: (info) => {
-                    resolve(server);
+                    resolve(connection);
                 },
                 onError: (error) => {
                     resolve();
@@ -67,48 +67,48 @@ module.exports = class ConnectionService {
                     restart: false,
                     onErrorTimeout: () => {
                         resolve();
-                        server.destroy();
+                        connection.destroy();
                     },
                 },
             });
-            server.connect();
+            connection.connect();
         }
-        const serversRaw = await Promise.all(promises);
-        return serversRaw.filter((server) => !!server);
+        const connectionsRaw = await Promise.all(promises);
+        return connectionsRaw.filter((connection) => !!connection);
     }
 
-    async stickOutPoolServers() {
-        const servers = await this.connectPoolingServers();
-        servers.forEach((server) => {
-            const name = server.getName();
-            const hostname = server.getHostname();
-            server.setRestart(true);
-            server.setOnErrorTimeout(() => {
-                this.removeServer(server);
-                this.addPoolServer(hostname, port);
-                server.destroy();
+    async stickOutPoolConnections() {
+        const connections = await this.connectPoolingConnections();
+        connections.forEach((connection) => {
+            const name = connection.getName();
+            const hostname = connection.getHostname();
+            connection.setRestart(true);
+            connection.setOnErrorTimeout(() => {
+                this.removeConnection(connection);
+                this.addPoolConnection(hostname, port);
+                connection.destroy();
             })
-            const port = server.getPort();
-            this._servers.push(server);
-            this._serversMap[name] = server;
-            this.removePoolServer(hostname, port);
+            const port = connection.getPort();
+            this._connections.push(connection);
+            this._connectionsMap[name] = connection;
+            this.removePoolConnection(hostname, port);
         });
     }
 
-    removePoolServer(hostname, port) {
+    removePoolConnection(hostname, port) {
         const name = getServerName(hostname, port);
-        delete this._poolingServersMap[name];
+        delete this._poolingConnectionsMap[name];
     }
 
-    addPoolServer(hostname, port) {
+    addPoolConnection(hostname, port) {
         const name = getServerName(hostname, port);
-        this._poolingServersMap[name] = { hostname, port };
+        this._poolingConnectionsMap[name] = { hostname, port };
     }
 
-    removeServer(hostname, port) {
+    removeConnection(hostname, port) {
         const name = getServerName(hostname, port);
         this.removeItem(this._resolversMap, this._resolvers, name, this._resolversMap[name] && this._resolversMap[name].promise);
-        this.removeItem(this._serversMap, this._servers, name);
+        this.removeItem(this._connectionsMap, this._connections, name);
     }
 
     removeItem(map, arr, hash, item) {
@@ -119,11 +119,11 @@ module.exports = class ConnectionService {
         delete map[hash];
     }
 
-    addServer(hostname, port) {
+    addConnection(hostname, port) {
         const name = getServerName(hostname, port);
 
         this._resolversMap[name] = {};
-        const promise = new Promise((resolve, e) => {
+        const promise = new Promise((resolve) => {
             this._resolversMap[name].resolve = resolve;
         }).then(() => {
             this.removeItem(this._resolversMap, this._resolvers, name, promise);
@@ -132,8 +132,8 @@ module.exports = class ConnectionService {
 
         this._resolvers.push(promise);
 
-        let server;
-        server = new ConnectionSocket({
+        let connection;
+        connection = new ConnectionSocket({
             hostname, port,
             onReceiveInfo: (info) => {
                 this._resolversMap[name] && this._resolversMap[name].resolve();
@@ -141,33 +141,33 @@ module.exports = class ConnectionService {
             restart: {
                 onErrorTimeout: () => {
                     resolve();
-                    server.destroy();
+                    connection.destroy();
                 },
             },
         });
 
-        this._serversMap[name] = server;
-        this._servers.push(server);
+        this._connectionsMap[name] = connection;
+        this._connections.push(connection);
 
-        return [server, promise];
+        return [connection, promise];
     }
 
     async run() {
         const timeout = new TimeoutErrorTimer();
         timeout.start("TIMEOUT: Error connecting with workers");
-        this._servers.forEach((server) => {
-            server.connect();
+        this._connections.forEach((connection) => {
+            connection.connect();
         });
         await Promise.all(this._resolvers);
-        await this.startPoolingServers();
+        await this.startPoolingConnections();
         timeout.stop();
     }
 
-    getServers() {
-        return this._servers;
+    getConnections() {
+        return this._connections;
     }
 
-    getServer(name) {
-        return this._serversMap[name];
+    getConnection(name) {
+        return this._connectionsMap[name];
     }
 }

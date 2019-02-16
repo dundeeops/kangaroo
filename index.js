@@ -26,22 +26,22 @@ process.stdin.on("keypress", (str, key) => {
 
 // Initialization
 
-const serverPool = new ConnectionService({
-    poolingServers: config.servers
+const connectionService = new ConnectionService({
+    poolingConnections: config.servers
 });
 
 if (argv.c) {
     argv.c.forEach((name) => {
         if (typeof name === "string") {
             const [hostname, port] = name.split(":");
-            serverPool.addServer(hostname, port);
+            connectionService.addServer(hostname, port);
         }
     });
 
     argv.p.forEach((name) => {
         if (typeof name === "string") {
             const [hostname, port] = name.split(":");
-            serverPool.addServer(hostname, port);
+            connectionService.addServer(hostname, port);
         }
     });
 }
@@ -51,12 +51,12 @@ const worker = new WorkerService({
         hostname: config.hostname,
         port: config.port,
     },
-    serverPool,
+    connectionService,
     preferableServerName: config.preferableServerName,
 });
 
 const manager = new ManagerService({
-    serverPool,
+    connectionService,
     preferableServerName: config.preferableServerName,
 });
 
@@ -120,7 +120,7 @@ const fs = require("fs");
 const path = require("path");
 
 async function run() {
-    await serverPool.run();
+    await connectionService.run();
 
     let timeout = new TimeoutErrorTimer();
     timeout.start("TIMEOUT: Error sending an initial stream");
