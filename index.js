@@ -62,76 +62,31 @@ const manager = new ManagerService({
 
 // Mapping
 
-worker.setStream("init", (key) => {
+worker.setStream("init", (key, send) => {
     let state = false;
-    return new MapTransform({
-        transform(chunk, encoding, callback) {
-            const { data } = this.parse(chunk);
-            state = !state;
-            this.send({
-                stage: "final",
-                key: state ? "final" : "final_alt",
-                data,
-            });
-            callback();
-        },
-        final(callback) {
-            console.log("The data has been processed 1 stage!", key);
-            this.send({
-                stage: "mediator",
-                key: "final",
-                data: null,
-            });
-            this.send({
-                stage: "mediator",
-                key: "final_alt",
-                data: null,
-            });
-            callback();
-        }
-    });
+    return async ({ data }) => {
+        state = !state;
+        await send("final", state ? "final" : "final_alt", data);
+    };
 });
 
-worker.setStream("mediator", (key) => {
-    return new MapTransform({
-        transform(chunk, encoding, callback) {
-            const { data } = this.parse(chunk);
-            state = !state;
-            this.send({
-                stage: "final",
-                key: "final",
-                data,
-            });
-            callback();
-        },
-        final(callback) {
-            console.log("The data has been processed 2 stage!", key);
-            this.send({
-                stage: "final",
-                key: "final",
-                data: null,
-            });
-            callback();
-        }
-    });
+worker.setStream("mediator", (key, send) => {
+    return async ({ data }) => {
+        await send("final", "final", data);
+    };
 });
 
 worker.setStream("final", (key) => {
     let sum = "";
-    return new MapWritable({
-        write(chunk, encoding, callback) {
-            const { data } = this.parse(chunk);
+    return async ({ data }) => {
+        if (data) {
             console.log("line", key, data);
             sum += data + "\n";
-            callback();
-        },
-        final(callback) {
-            console.log(sum);
+        } else {
+            console.log("final", sum);
             console.log("The data has been processed!", key);
-
-            callback();
         }
-    });
+    };
 });
 
 // Run Worker

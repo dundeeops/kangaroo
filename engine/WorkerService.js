@@ -1,4 +1,4 @@
-const { pipeline, Writable, Readable } = require("stream");
+const { pipeline, Writable, Readable, Transform } = require("stream");
 const {
     serializeData,
     deserializeData,
@@ -19,6 +19,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         });
         this._mappers = {};
         this._stageKeyStreamMap = {};
+
+        this._streamMap = {};
     }
 
     answer(socket, id, type, data) {
@@ -55,7 +57,37 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return this._server.getStream();
     }
 
+    async getMap(session, stage, key) {
+        const hash = getHash(session, stage, key);
+        let map = this._streamMap[hash];
+        if (!map) {
+            const send = async (stage, key, data) => await this.send(session, stage, key, data);
+            const mapper = this._mappers[stage];
+            map = await mapper(key, send);
+            this._streamMap[hash] = map;
+        }
+        return map;
+    }
+
     getMapStream() {
+        const _service = this;
+        return new Writable({
+            async write(chunk, encoding, callback) {
+                const raw = chunk.toString();
+                const { session, stage, key, data } = deserializeData(raw);
+                const map = await _service.getMap(session, stage, key);
+
+                await map({ stage, key, data });
+
+                callback();
+            },
+            final(callback) {
+                callback();
+            }
+        });
+    }
+
+    _getMapStream() {
         const _service = this;
         return new Writable({
             write(chunk, encoding, callback) {
@@ -99,7 +131,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     callback();
                 },
             });
-            
+
             this._stageKeyStreamMap[hash] = {
                 stream: readStream,
                 pipeline: pipeline(
