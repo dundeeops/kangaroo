@@ -24,9 +24,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     answer(socket, id, type, data) {
         switch (type) {
             case "getSessionStageKeyServer":
-                const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);
-                console.log(id, type, data, serverName);
-                
+                const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);                
                 socket.write(serializeData({
                     id,
                     type,
@@ -51,13 +49,6 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         // TODO: Make accumulator
         return this.getIncomeStream()
             .pipe(this.getMapStream());
-
-        // return pipeline(
-        //     this.getIncomeStream(),
-        //     // this.getLinesStream(),
-        //     this.getMapStream(),
-        //     this.errorProcessing,
-        // )
     }
 
     getIncomeStream() {
@@ -65,7 +56,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     getMapStream() {
-        const mapReduceOrchestrator = this;
+        const _service = this;
         return new Writable({
             write(chunk, encoding, callback) {
                 const raw = chunk.toString();
@@ -73,10 +64,12 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 const { session, stage, key, data } = deserializeData(raw);
                 const hash = getHash(session, stage, key);
                 if (data) {
-                    const stream = mapReduceOrchestrator.getStageKeyStreamOrCreate(hash, session, stage, key);
+                    const stream = _service.getStageKeyStreamOrCreate(hash, session, stage, key);
                     stream.push(raw);
                 } else {
-                    const stream = mapReduceOrchestrator.getStageKeyStream(hash);
+                    const stream = _service.getStageKeyStream(hash);
+                    console.log(!!stream, stage, key, data);
+                    
                     if (stream) {
                         stream.push(null);
                         stream.destroy();
@@ -96,13 +89,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     getStageKeyStreamOrCreate(hash, session, stage, key) {
         if (!this._stageKeyStreamMap[hash]) {
-            const mapReduceOrchestrator = this;
+            const _service = this;
             const readStream = new Readable({
                 autoDestroy: true,
                 read() {},
                 destroy(error, callback) {
-                    mapReduceOrchestrator._stageKeyStreamMap[hash] = undefined;
-                    delete mapReduceOrchestrator._stageKeyStreamMap[hash];
+                    _service._stageKeyStreamMap[hash] = undefined;
+                    delete _service._stageKeyStreamMap[hash];
                     callback();
                 },
             });

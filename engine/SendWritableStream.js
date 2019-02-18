@@ -9,7 +9,6 @@ module.exports = class SendWritableStream extends Writable {
         super(options);
         this._decoder = new StringDecoder(options.defaultEncoding);
         this._send = options.send;
-        this._serverName = options.serverName;
         this._session = options.session;
         this._stage = options.stage;
         this._key = options.key;
@@ -17,12 +16,14 @@ module.exports = class SendWritableStream extends Writable {
 
     send(raw) {
         const { stage, key, data } = deserializeData(raw);
-        this._send(this._serverName, this._session, stage, key, data);
+        // console.log("COMPARE", this._stage, this._key, stage, key);
+        
+        this._send(this._session, stage, key, data);
     }
 
-    sendFinal() {
-        this._send(this._serverName, this._session, this._stage, this._key, null);
-    }
+    // sendFinal() {
+    //     this._send(this._session, this._stage, this._key, null);
+    // }
 
     _write(bytes, encoding, callback) {
         let chunk;
@@ -46,7 +47,7 @@ module.exports = class SendWritableStream extends Writable {
             this.send(chunk);
         }
 
-        this.sendFinal();
+        // this.sendFinal();
 
         callback();
     }

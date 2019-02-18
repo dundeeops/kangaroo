@@ -76,7 +76,7 @@ worker.setStream("init", (key) => {
             callback();
         },
         final(callback) {
-            // console.log("The data has been processed 1 stage!", key);
+            console.log("The data has been processed 1 stage!", key);
             this.send({
                 stage: "mediator",
                 key: "final",
@@ -105,7 +105,7 @@ worker.setStream("mediator", (key) => {
             callback();
         },
         final(callback) {
-            // console.log("The data has been processed 2 stage!", key);
+            console.log("The data has been processed 2 stage!", key);
             this.send({
                 stage: "final",
                 key: "final",

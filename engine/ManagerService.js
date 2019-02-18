@@ -19,7 +19,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
             stream,
             this.getLinesStream(),
             this.getSerializationStream(session, stage),
-            this.getOutcomeStream(session, stage),
+            this.getOutcomeStream(session, stage, null),
             this.errorProcessing,
         );
     }
@@ -31,6 +31,10 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                 this.push(serializeData({ session, stage, key, data }));
                 callback();
             },
+            final(callback) {
+                this.push(serializeData({ session, stage, key, data: null }));
+                callback();
+            }
         });
     }
 }

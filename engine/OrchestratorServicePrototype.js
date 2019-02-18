@@ -16,7 +16,8 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         this._sessionStageKeyMap = {};
     }
 
-    async push(preferableServerName, session, stage, key, data) {
+    async send(session, stage, key, data) {
+        if (!data) console.log("SCOPE", stage, key, data);
         const serverName = await this.getSessionStageKeyConnection(session, stage, key);
         const connection = this._connectionService.getConnection(serverName);
         const raw = serializeData({ session, stage, key, data });
@@ -46,14 +47,17 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
             serverName = this.getSessionStageKeyServer(session, stage, key);
             if (!serverName) {
                 serverName = await this.askSessionStageKeyServer(session, stage, key);
-                this.setSessionStageKeyServer(session, stage, key, serverName);
             }
         }
 
         if (!serverName) {
             serverName = await this.getRandomAliveConnection(stage);
+        }
+
+        if (key) {
             this.setSessionStageKeyServer(session, stage, key, serverName);
         }
+
         return serverName;
     }
 
@@ -80,9 +84,8 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
 
     getOutcomeStream(session, stage, key) {
         return new SendWritableStream({
-            send: this.push.bind(this),
-            serverName: this._preferableServerName,
-            session, stage, key,
+            send: this.send.bind(this),
+            session, stage, key
         });
     }
 
