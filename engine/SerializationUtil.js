@@ -3,12 +3,16 @@ const crypto = require("crypto");
 
 const separator = ":_:";
 
+function cleanString(str) {
+    return str.replace(/(\n|\r)$/, '').trim();
+}
+
 function serializeData(data) {
     return safeStringify(data);
 }
 
 function deserializeData(raw) {
-    return JSON.parse(raw.toString());
+    return JSON.parse(cleanString(raw.toString()));
 }
 
 function getServerName(hostname, port) {
@@ -24,6 +28,7 @@ function getId() {
 }
 
 module.exports = {
+    cleanString,
     serializeData,
     deserializeData,
     getServerName,

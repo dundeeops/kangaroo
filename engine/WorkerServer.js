@@ -1,19 +1,31 @@
 const { Readable } = require("stream");
 const net = require("net");
+const EventEmitter = require("./EventEmitter.js");
 const {
     getServerName,
+    deserializeData,
     serializeData,
 } = require("./SerializationUtil.js");
 const RestartService = require("./RestartService.js");
 
-module.exports = class WorkerServer {
+module.exports = class WorkerServer extends EventEmitter {
     constructor(options) {
+        super();
         this._hostname = options.hostname;
         this._port = options.port;
         this._getMappers = options.getMappers;
+        this._onAnswer = options.onAnswer;
 
         this._server = null;
         this._stream = this.makeStream();
+        
+        this.on("answer", (socket, id, type, data) => {
+            this._onAnswer(socket, id, type, data);
+        });
+        
+        this.on("data", (data) => {
+            this._stream.push(data);
+        });
 
         this._resolve = () => {};
         this._promise = new Promise((r) => this._resolve = r);
@@ -58,9 +70,26 @@ module.exports = class WorkerServer {
                     type: "info",
                     mappers: this._getMappers(),
                 }) + "\n");
-                socket.on("data", (data) => {
-                    this._stream.push(data.toString("utf8"));
-                });
+
+                socket
+                    .on("data", (raw) => {
+                        raw.toString().split("\n").map((str) => {
+                            if (str) {
+                                const { id, type, data } = deserializeData(str);
+        
+                                if (type) {
+                                    this.emit("answer", socket, id, type, data);
+                                    // this._onAnswer(socket, id, type, data);
+                                } else {
+                                    this.emit("data", str);
+                                    // this._stream.push(str);
+                                }
+                            }
+                        });
+                    });
+                
+                // socket.on("data", (raw) => {
+                // });
             },
             () => {
                 console.log(`Worker started with ${this.getName()}`);

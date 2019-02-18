@@ -1,5 +1,8 @@
 const { Transform } = require("stream");
 const { StringDecoder } = require("string_decoder");
+const {
+    cleanString,
+} = require("./SerializationUtil.js");
 
 module.exports = class EventStreamTransformStream extends Transform {
     constructor(options) {
@@ -8,17 +11,13 @@ module.exports = class EventStreamTransformStream extends Transform {
         this.cacheStr = "";
     }
 
-    cleanString(str) {
-        return str.replace(/(\n|\r)$/, '').trim();
-    }
-
     sendData(str) {
         const data = this.cacheStr + str;
         const chunks = data.split("\n");
 
         for (let i = 0; i < chunks.length - 1; i++) {
             if (chunks[i]) {
-                this.push(this.cleanString(chunks[i]));
+                this.push(cleanString(chunks[i]));
             }
         }
 
@@ -46,7 +45,7 @@ module.exports = class EventStreamTransformStream extends Transform {
     _final(callback) {
         const data = this._decoder.end();
         this.sendData(data);
-        const str = this.cleanString(this.cacheStr);
+        const str = cleanString(this.cacheStr);
         if (str) {
             this.push(str);
         }

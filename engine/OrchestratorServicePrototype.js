@@ -1,4 +1,4 @@
-const EventEmitter = require("events");
+const EventEmitter = require("./EventEmitter.js");
 const SendWritableStream = require("./SendWritableStream.js");
 const EventStreamTransformStream = require("./EventStreamTransformStream.js");
 const {
@@ -11,10 +11,52 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
     constructor(options) {
         super();
         this._connectionService = options.connectionService;
-        this._preferableServerName = options.preferableServerName;
-        this._connectionStageMap = {};
-        this._stageKeyMap = {};
+        // this._preferableServerName = options.preferableServerName;
+
+        this._sessionStageKeyMap = {};
     }
+
+    async push(preferableServerName, session, stage, key, data) {
+        const serverName = await this.getSessionStageKeyConnection(session, stage, key);
+        const connection = this._connectionService.getConnection(serverName);
+        const raw = serializeData({ session, stage, key, data });
+        connection.sendData(raw + "\n");
+    }
+
+    getSessionStageKeyServer(session, stage, key) {
+        const hash = getHash(session, stage, key);
+        return this._sessionStageKeyMap[hash];
+    }
+
+    setSessionStageKeyServer(session, stage, key, server) {
+        const hash = getHash(session, stage, key);
+        this._sessionStageKeyMap[hash] = server;
+    }
+
+    async askSessionStageKeyServer(session, stage, key) {
+        return await this.ask("getSessionStageKeyServer", {
+            session, stage, key,
+        });
+    }
+
+    async getSessionStageKeyConnection(session, stage, key) {
+        let serverName;
+
+        if (key) {
+            serverName = this.getSessionStageKeyServer(session, stage, key);
+            if (!serverName) {
+                serverName = await this.askSessionStageKeyServer(session, stage, key);
+                this.setSessionStageKeyServer(session, stage, key, serverName);
+            }
+        }
+
+        if (!serverName) {
+            serverName = await this.getRandomAliveConnection(stage);
+            this.setSessionStageKeyServer(session, stage, key, serverName);
+        }
+        return serverName;
+    }
+
 
     async ask(type, data) {
         const promises = [];
@@ -23,8 +65,7 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
             .forEach(connection => {
                 promises.push(connection.ask(type, data));
             });
-        const results = await Promise.all(promises);
-        return results.find(r => !!r);
+        return await this.raceData(promises);
     }
 
     getLinesStream() {
@@ -45,71 +86,32 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         });
     }
 
-    getServerStageKeyCount(serverStageHash) {
-        return this._connectionStageMap[serverStageHash] || 0;
+    shuffle(a) {
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
     }
 
-    getServerStageKeySorted(serverName, stage) {
-        return this._connectionService
+    getRandomSortedAliveConnections(stage) {
+        return this.shuffle(
+            this._connectionService
             .getConnections()
             .filter((server) => {
                 return server.isContainsStage(stage) && server.isAlive();
             })
-            .sort((a, b) => {
-                const aServerHash = getHash(a.getName(), stage);
-                const aKeyCount = getServerStageKeyCount(aServerHash);
-                const bServerHash = getHash(b.getName(), stage);
-                const bKeyCount = getServerStageKeyCount(bServerHash);
-                if (aKeyCount === bKeyCount) {
-                    if (a.getName() === serverName) {
-                        return 1;
-                    } else if (b.getName() === serverName) {
-                        return -1;
-                    }
-                } else {
-                    return aKeyCount < bKeyCount ? 1 : -1;
-                }
-            })
-            .map((server) => server.getName());
+            .map((server) => server.getName())
+        );
     }
 
-    async getNextServer(preferableServerName, stage, key) {
-        const stageKeyHash = getHash(stage, key);
-        if (
-            key != null && this._stageKeyMap[stageKeyHash]
-        ) {
-            return this._stageKeyMap[stageKeyHash];
-        } else {
-            const sorted = this.getServerStageKeySorted(preferableServerName, stage);
+    async getRandomAliveConnection(stage) {
+        const sorted = this.getRandomSortedAliveConnections(stage);
 
-            if (sorted.length === 0) {
-                throw Error("There are no alive servers");
-            }
-
-            return sorted[0] || preferableServerName;
-        }
-    }
-
-    setNextServer(serverName, stage, key) {
-        if (key != null) {
-            const stageKeyHash = getHash(stage, key);
-            this._stageKeyMap[stageKeyHash] = serverName;
+        if (sorted.length === 0) {
+            throw Error("There are no alive servers");
         }
 
-        const serverStageHash = getHash(serverName, stage);
-
-        if (!this._connectionStageMap[serverStageHash]) {
-            this._connectionStageMap[serverStageHash] = 1;
-        } else {
-            this._connectionStageMap[serverStageHash]++;
-        }
-    }
-
-    async push(preferableServerName, session, stage, key, data) {
-        const nextServerName = await this.getNextServer(preferableServerName, stage, key);
-        this.setNextServer(nextServerName, stage, key);
-        const server = this._connectionService.getConnection(nextServerName);
-        const raw = serializeData({ session, stage, key, data });
-        server.sendData(raw + "\n");
+        return sorted[0];
     }
 }

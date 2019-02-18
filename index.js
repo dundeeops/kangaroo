@@ -78,13 +78,37 @@ worker.setStream("init", (key) => {
         final(callback) {
             // console.log("The data has been processed 1 stage!", key);
             this.send({
-                stage: "final",
+                stage: "mediator",
                 key: "final",
                 data: null,
             });
             this.send({
-                stage: "final",
+                stage: "mediator",
                 key: "final_alt",
+                data: null,
+            });
+            callback();
+        }
+    });
+});
+
+worker.setStream("mediator", (key) => {
+    return new MapTransform({
+        transform(chunk, encoding, callback) {
+            const { data } = this.parse(chunk);
+            state = !state;
+            this.send({
+                stage: "final",
+                key: "final",
+                data,
+            });
+            callback();
+        },
+        final(callback) {
+            // console.log("The data has been processed 2 stage!", key);
+            this.send({
+                stage: "final",
+                key: "final",
                 data: null,
             });
             callback();

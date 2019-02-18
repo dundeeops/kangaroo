@@ -1,16 +1,19 @@
 const { Writable } = require("stream");
-const EventEmitter = require("events");
 const net = require("net");
+const EventEmitter = require("./EventEmitter.js");
 const {
     getServerName,
     serializeData,
     deserializeData,
     getId,
+    getHash,
 } = require("./SerializationUtil.js");
 const RestartService = require("./RestartService.js");
+const TimeoutError = require("./TimeoutErrorTimer.js");
 
 module.exports = class ConnectionSocket extends EventEmitter {
     constructor(options) {
+        super();
         this._onReceiveInfo = options.onReceiveInfo || (() => {});
         this._onError = options.onError || (() => {});
         this._hostname = options.hostname;
@@ -34,10 +37,27 @@ module.exports = class ConnectionSocket extends EventEmitter {
 
     async ask(type, data) {
         return new Promise((r) => {
+            const sessionId = getId();
+            const name = getHash("ask", type);
+
+            const timeoutError = new TimeoutError({
+                timeout: 1000,
+                onError: () => r(),
+            });
+
+            this.onceIfTrue(name, (id, type, data) => {
+                if (id === sessionId) {
+                    timeoutError.stop();
+                    r(data);
+                    return true;
+                }
+            });
+
+            timeoutError.start();
+
             this.push(serializeData({
-                id: getId(),
-                type, data,
-            }));
+                id: sessionId, type, data,
+            }) + "\n");
         });
     }
 
@@ -82,16 +102,22 @@ module.exports = class ConnectionSocket extends EventEmitter {
         const socket = new net.Socket();
 
         socket.on("data", (raw) => {
-            const data = deserializeData(raw.toString());
-            if (data.type === "info") {
-                this._socket = socket;
-                this._info.mappers = data.mappers;
-                callback();
-                this._onReceiveInfo(this._info);
-                this.releaseAccumulator();
-            } else if (data.type) {
-                // this.
-            }
+            raw.toString().split("\n").map((str) => {
+                if (str) {
+                    const data = deserializeData(str);
+                    if (data.type === "info") {
+                        this._socket = socket;
+                        this._info.mappers = data.mappers;
+                        callback();
+        
+                        this._onReceiveInfo(this._info);
+                        this.releaseAccumulator();
+                    } else if (data.type) {
+                        const name = getHash("ask", data.type);
+                        this.emit(name, data.id, data.type, data.data);
+                    }
+                }
+            });
         });
 
         socket.on("close", () => {

@@ -1,5 +1,6 @@
 const { pipeline, Writable, Readable } = require("stream");
 const {
+    serializeData,
     deserializeData,
     getHash,
 } = require("./SerializationUtil.js");
@@ -14,9 +15,25 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             hostname: options.server.hostname,
             port: options.server.port,
             getMappers: () => this.getMappers(),
+            onAnswer: this.answer.bind(this),
         });
         this._mappers = {};
         this._stageKeyStreamMap = {};
+    }
+
+    answer(socket, id, type, data) {
+        switch (type) {
+            case "getSessionStageKeyServer":
+                const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);
+                console.log(id, type, data, serverName);
+                
+                socket.write(serializeData({
+                    id,
+                    type,
+                    data: serverName,
+                }) + "\n");
+                break;
+        }
     }
 
     getMappers() {
@@ -30,13 +47,17 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     async run() {
         await this._server.runAndWait();
 
-        // TODO: error processing
-        return pipeline(
-            this.getIncomeStream(),
-            this.getLinesStream(),
-            this.getMapStream(),
-            this.errorProcessing,
-        )
+        // TODO: Make error processing
+        // TODO: Make accumulator
+        return this.getIncomeStream()
+            .pipe(this.getMapStream());
+
+        // return pipeline(
+        //     this.getIncomeStream(),
+        //     // this.getLinesStream(),
+        //     this.getMapStream(),
+        //     this.errorProcessing,
+        // )
     }
 
     getIncomeStream() {
@@ -48,6 +69,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return new Writable({
             write(chunk, encoding, callback) {
                 const raw = chunk.toString();
+                
                 const { session, stage, key, data } = deserializeData(raw);
                 const hash = getHash(session, stage, key);
                 if (data) {
