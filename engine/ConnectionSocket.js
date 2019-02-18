@@ -1,13 +1,15 @@
 const { Writable } = require("stream");
+const EventEmitter = require("events");
 const net = require("net");
-const domain = require("domain");
 const {
     getServerName,
+    serializeData,
     deserializeData,
+    getId,
 } = require("./SerializationUtil.js");
 const RestartService = require("./RestartService.js");
 
-module.exports = class ConnectionSocket {
+module.exports = class ConnectionSocket extends EventEmitter {
     constructor(options) {
         this._onReceiveInfo = options.onReceiveInfo || (() => {});
         this._onError = options.onError || (() => {});
@@ -27,6 +29,15 @@ module.exports = class ConnectionSocket {
             isAlive: this.isAlive.bind(this),
             timeoutErrorMessage: `TIMEOUT: Error connecting with a server ${this._hostname}:${this._port}`,
             ...options.restart,
+        });
+    }
+
+    async ask(type, data) {
+        return new Promise((r) => {
+            this.push(serializeData({
+                id: getId(),
+                type, data,
+            }));
         });
     }
 
@@ -78,6 +89,8 @@ module.exports = class ConnectionSocket {
                 callback();
                 this._onReceiveInfo(this._info);
                 this.releaseAccumulator();
+            } else if (data.type) {
+                // this.
             }
         });
 

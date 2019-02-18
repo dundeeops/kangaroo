@@ -1,3 +1,4 @@
+const EventEmitter = require("events");
 const SendWritableStream = require("./SendWritableStream.js");
 const EventStreamTransformStream = require("./EventStreamTransformStream.js");
 const {
@@ -5,13 +6,25 @@ const {
     getHash,
 } = require("./SerializationUtil.js");
 
-module.exports = class OrchestratorServicePrototype {
+module.exports = class OrchestratorServicePrototype extends EventEmitter {
 
     constructor(options) {
+        super();
         this._connectionService = options.connectionService;
         this._preferableServerName = options.preferableServerName;
         this._connectionStageMap = {};
         this._stageKeyMap = {};
+    }
+
+    async ask(type, data) {
+        const promises = [];
+        this._connectionService
+            .getConnections()
+            .forEach(connection => {
+                promises.push(connection.ask(type, data));
+            });
+        const results = await Promise.all(promises);
+        return results.find(r => !!r);
     }
 
     getLinesStream() {
