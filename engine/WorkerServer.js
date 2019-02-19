@@ -1,5 +1,5 @@
-const { Readable } = require("stream");
 const net = require("net");
+const es = require("event-stream");
 const EventEmitter = require("./EventEmitter.js");
 const {
     getServerName,
@@ -18,16 +18,6 @@ module.exports = class WorkerServer extends EventEmitter {
         this._onData = options.onData;
 
         this._server = null;
-        this._stream = this.makeStream();
-        
-        this.on("answer", (socket, id, type, data) => {
-            this._onAnswer(socket, id, type, data);
-        });
-        
-        this.on("data", (socket, data) => {
-            // this._stream.push(data);
-            this._onData(socket, data);
-        });
 
         this._resolve = () => {};
         this._promise = new Promise((r) => this._resolve = r);
@@ -73,25 +63,18 @@ module.exports = class WorkerServer extends EventEmitter {
                     mappers: this._getMappers(),
                 }) + "\n");
 
-                socket
-                    .on("data", (raw) => {
-                        raw.toString().split("\n").map((str) => {
-                            if (str) {
-                                const { id, type, data } = deserializeData(str);
-        
-                                if (type) {
-                                    this.emit("answer", socket, id, type, data);
-                                    // this._onAnswer(socket, id, type, data);
-                                } else {
-                                    this.emit("data", socket, str);
-                                    // this._stream.push(str);
-                                }
-                            }
-                        });
-                    });
-                
-                // socket.on("data", (raw) => {
-                // });
+                socket 
+                    .pipe(es.split())
+                    .pipe(es.parse())
+                    .pipe(es.map(async (obj, cb) => {
+                        const { id, type, data } = obj;
+                        if (type) {
+                            await this._onAnswer(socket, id, type, data);
+                        } else {
+                            await this._onData(socket, obj);
+                        }
+                        cb();
+                    }));
             },
             () => {
                 console.log(`Worker started with ${this.getName()}`);
@@ -107,16 +90,5 @@ module.exports = class WorkerServer extends EventEmitter {
         );
 
         return server;
-    }
-
-    makeStream() {
-        return new Readable({
-            autoDestroy: true,
-            read() {},
-        });
-    }
-
-    getStream() {
-        return this._stream;
     }
 }

@@ -24,7 +24,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._streamMap = {};
     }
 
-    onAsk(socket, id, type, data) {
+    async onAsk(socket, id, type, data) {
         switch (type) {
             case "getSessionStageKeyServer":
                 const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);
@@ -112,12 +112,10 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return map;
     }
 
-    async onData(socket, chunk) {
-        const raw = chunk.toString();
-        const { session, stage, key, data } = deserializeData(raw);
+    async onData(socket, { session, stage, key, data }) {
 
         if (data != null) {
-            const map = await _service.getStorageMap(session, stage, key);
+            const map = await this.getStorageMap(session, stage, key);
             await map({ stage, key, data });
         } else {
             console.log("CLOSE MAP", session, stage, key);
@@ -130,9 +128,11 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
             // TODO: Notify all key and send null to them
 
-            _service.unsetMap(session, stage, key);
+            this.unsetMap(session, stage, key);
         }
     }
+
+    // TODO: Remove all below
 
     getMapStream() {
         const _service = this;
