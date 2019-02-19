@@ -15,7 +15,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             hostname: options.server.hostname,
             port: options.server.port,
             getMappers: () => this.getMappers(),
-            onAnswer: this.answer.bind(this),
+            onAnswer: this.onAsk.bind(this),
+            onData: this.onData.bind(this),
         });
         this._mappers = {};
         this._stageKeyStreamMap = {};
@@ -23,10 +24,10 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._streamMap = {};
     }
 
-    answer(socket, id, type, data) {
+    onAsk(socket, id, type, data) {
         switch (type) {
             case "getSessionStageKeyServer":
-                const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);                
+                const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);
                 socket.write(serializeData({
                     id,
                     type,
@@ -49,8 +50,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
         // TODO: Make error processing
         // TODO: Make accumulator
-        return this.getIncomeStream()
-            .pipe(this.getMapStream());
+        // return this.getIncomeStream()
+        //     .pipe(this.getMapStream());
     }
 
     getIncomeStream() {
@@ -68,11 +69,37 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return map;
     }
 
-    async setMap(hash, map) {
-        this._streamMap[hash] = map;
+    setMap(hash, map) {
+        this._streamMap[hash] = { map, sessions: {} };
     }
 
-    async getMap(session, stage, key) {
+    increaseMapSessionKey(session, stage, key) {
+        const hash = getHash(session, stage, key);
+        const hashStageKey = getHash(session, stage, key);
+        if (!this._streamMap[hash].session[hashStageKey]) {
+            this._streamMap[hash].session[hashStageKey] = 0;
+        }
+        this._streamMap[hash].session[hashStageKey]++;
+    }
+
+    decreaseMapSessionKey(session, stage, key) {
+        const hash = getHash(session, stage, key);
+        const hashStageKey = getHash(session, stage, key);
+        if (this._streamMap[hash].session[hashStageKey]) {
+            this._streamMap[hash].session[hashStageKey]--;
+        }
+    }
+
+    unsetMap(session, stage, key) {
+        const hash = getHash(session, stage, key);
+        delete this._streamMap[hash];
+    }
+
+    getMap(hash) {
+       return this._streamMap[hash] && this._streamMap[hash].map;
+    }
+
+    async getStorageMap(session, stage, key) {
         const hash = getHash(session, stage, key);
         let map = this._streamMap[hash];
 
@@ -85,15 +112,42 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return map;
     }
 
+    async onData(socket, chunk) {
+        const raw = chunk.toString();
+        const { session, stage, key, data } = deserializeData(raw);
+
+        if (data != null) {
+            const map = await _service.getStorageMap(session, stage, key);
+            await map({ stage, key, data });
+        } else {
+            console.log("CLOSE MAP", session, stage, key);
+            
+            // socket.write(serializeData({
+            //     id,
+            //     type: "finish",
+            //     data: { session, stage, key },
+            // }) + "\n");
+
+            // TODO: Notify all key and send null to them
+
+            _service.unsetMap(session, stage, key);
+        }
+    }
+
     getMapStream() {
         const _service = this;
         return new Writable({
             async write(chunk, encoding, callback) {
                 const raw = chunk.toString();
                 const { session, stage, key, data } = deserializeData(raw);
-                const map = await _service.getMap(session, stage, key);
 
-                await map({ stage, key, data });
+                if (data != null) {
+                    const map = await _service.getStorageMap(session, stage, key);
+                    await map({ stage, key, data });
+                } else {
+                    console.log("CLOSE MAP", session, stage, key);
+                    _service.unsetMap(session, stage, key);
+                }
 
                 callback();
             },

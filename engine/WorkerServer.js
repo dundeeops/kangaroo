@@ -15,6 +15,7 @@ module.exports = class WorkerServer extends EventEmitter {
         this._port = options.port;
         this._getMappers = options.getMappers;
         this._onAnswer = options.onAnswer;
+        this._onData = options.onData;
 
         this._server = null;
         this._stream = this.makeStream();
@@ -23,8 +24,9 @@ module.exports = class WorkerServer extends EventEmitter {
             this._onAnswer(socket, id, type, data);
         });
         
-        this.on("data", (data) => {
-            this._stream.push(data);
+        this.on("data", (socket, data) => {
+            // this._stream.push(data);
+            this._onData(socket, data);
         });
 
         this._resolve = () => {};
@@ -81,7 +83,7 @@ module.exports = class WorkerServer extends EventEmitter {
                                     this.emit("answer", socket, id, type, data);
                                     // this._onAnswer(socket, id, type, data);
                                 } else {
-                                    this.emit("data", str);
+                                    this.emit("data", socket, str);
                                     // this._stream.push(str);
                                 }
                             }
