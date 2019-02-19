@@ -57,15 +57,31 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return this._server.getStream();
     }
 
+    getMapper(stage) {
+        const mapper = this._mappers[stage];
+        return mapper;
+    }
+
+    async makeMap(session, key, mapper) {
+        const send = async (stage, key, data) => await this.send(session, stage, key, data);
+        const map = await mapper(key, send);
+        return map;
+    }
+
+    async setMap(hash, map) {
+        this._streamMap[hash] = map;
+    }
+
     async getMap(session, stage, key) {
         const hash = getHash(session, stage, key);
         let map = this._streamMap[hash];
+
         if (!map) {
-            const send = async (stage, key, data) => await this.send(session, stage, key, data);
-            const mapper = this._mappers[stage];
-            map = await mapper(key, send);
-            this._streamMap[hash] = map;
+            const mapper = this.getMapper(stage);
+            map = await this.makeMap(session, key, mapper);
+            this.setMap(hash, map);
         }
+
         return map;
     }
 

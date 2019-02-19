@@ -94,8 +94,8 @@ module.exports = class WorkerServer extends EventEmitter {
             () => {
                 console.log(`Worker started with ${this.getName()}`);
                 this._server = server;
-                this._resolve();
                 callback();
+                this._resolve();
             },
             () => {
                 console.log(`Worker stopped with ${this.getName()}`);

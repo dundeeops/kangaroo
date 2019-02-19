@@ -63,17 +63,21 @@ module.exports = class RestartService {
         }
     }
 
+    checkIsAlive() {
+        if (!this._isAlive()) {
+            this.startRestart();
+        } else {
+            this.stopRestart();
+            this._timeoutError.stop();
+        }
+    }
+
     start() {
         if (!this._isStarting && !this._isAlive()) {
             this._timeoutError.start();
             return this.run(() => {
                 this._isStarting = false;
-                if (!this._isAlive()) {
-                    this.startRestart();
-                } else {
-                    this.stopRestart();
-                    this._timeoutError.stop();
-                }
+                this.checkIsAlive();
             });
         }
     }
@@ -84,6 +88,7 @@ module.exports = class RestartService {
 
             this._run(() => {
                 this._isStarting = false;
+                this.checkIsAlive();
             });
         });
     }

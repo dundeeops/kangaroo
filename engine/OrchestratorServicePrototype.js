@@ -17,7 +17,6 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
     }
 
     async send(session, stage, key, data) {
-        if (!data) console.log("SCOPE", stage, key, data);
         const serverName = await this.getSessionStageKeyConnection(session, stage, key);
         const connection = this._connectionService.getConnection(serverName);
         const raw = serializeData({ session, stage, key, data });
