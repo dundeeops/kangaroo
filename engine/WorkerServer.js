@@ -3,7 +3,6 @@ const es = require("event-stream");
 const EventEmitter = require("./EventEmitter.js");
 const {
     getServerName,
-    deserializeData,
     serializeData,
 } = require("./SerializationUtil.js");
 const RestartService = require("./RestartService.js");
@@ -42,7 +41,7 @@ module.exports = class WorkerServer extends EventEmitter {
         return getServerName(this._hostname, this._port);
     }
 
-    async runAndWait() {
+    async start() {
         this._service.start();
         await this._promise;
     }

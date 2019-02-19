@@ -91,7 +91,7 @@ worker.setStream("final", (key) => {
 
 // Run Worker
 
-worker.run();
+worker.start();
 
 // Test Part
 
@@ -99,7 +99,7 @@ const fs = require("fs");
 const path = require("path");
 
 async function run() {
-    await connectionService.run();
+    await connectionService.start();
 
     let timeout = new TimeoutErrorTimer();
     timeout.start("TIMEOUT: Error sending an initial stream");

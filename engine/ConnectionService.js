@@ -152,7 +152,7 @@ module.exports = class ConnectionService {
         return [connection, promise];
     }
 
-    async run() {
+    async start() {
         const timeout = new TimeoutErrorTimer();
         timeout.start("TIMEOUT: Error connecting with workers");
         this._connections.forEach((connection) => {

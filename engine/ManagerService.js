@@ -1,4 +1,5 @@
 const { pipeline, Transform } = require("stream");
+const es = require("event-stream");
 const {
     serializeData,
     getId,
@@ -11,7 +12,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
         super(options);
     }
 
-    runStream(stage, stream) {
+    runStream(stage, stream, key) {
         const session = getId();
 
         // TODO: error processing
@@ -19,7 +20,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
             stream,
             this.getLinesStream(),
             this.getSerializationStream(session, stage),
-            this.getOutcomeStream(session, stage, null),
+            this.getOutcomeStream(session, stage, key),
             this.errorProcessing,
         );
     }
