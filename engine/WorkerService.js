@@ -141,9 +141,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     checkStorageMap(hash) {
-        let map = this._storageMap[hash];
-
-        if (!map) {
+        if (!this._storageMap[hash]) {
             this.makeStorageMap(hash);
         }
     }
@@ -166,6 +164,17 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         } else {
             this.onDataReduce(socket, obj);
         }
+    }
+
+    async startUnlessTimeout(callback, timeout) {
+        let func;
+        func = async () => {
+            const result = await callback();
+            if (result) {
+                setTimeout(func, timeout);
+            }
+        }
+        setTimeout(func, timeout);
     }
 
     async onDataReduce(socket, { session, stage, key, data }) {
@@ -193,9 +202,11 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             await this.waitStorageMapCount(hash);
             console.log("Notify Map Finished", session, stage, key, !!data);
             this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
-                serverNames.forEach((serverName) => {
-                    this.sendToServer(serverName, session, stage, key, null);
-                });
+                if (key) {
+                    serverNames.forEach((serverName) => {
+                        this.sendToServer(serverName, session, stage, key, null);
+                    });
+                }
             });
 
             this.destroyStorageMap(hash);
@@ -208,37 +219,45 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         
         this._processingMap[hashMap] = (this._processingMap[hashMap] || 0) + 1;
 
-        if (!this._storageMap[hash] && data == null) {
-            console.log("Notify All Finished", session, stage);
+        // if (!this._storageMap[hash] && data == null) {
+        //     console.log("Notify All Finished", session, stage);
             
-            await this.notify("finishProcessing", {
-                session, stage, key: null,
-            });
+        //     await this.notify("finishProcessing", {
+        //         session, stage, key: null,
+        //     });
 
-            return;
-        }
+        //     return;
+        // }
+
+        console.log("NULL", !data);
 
         this.checkStorageMap(hash);
 
-        if (data != null) {
-            const storageMap = await this.getStorageMap(hash, session, stage, null);
-            await storageMap.map({ stage, key: null, data, eof: false });
-            await storageMap.map({ stage, key: null, data: null, eof: true });
-        }
+        const storageMap = await this.getStorageMap(hash, session, stage, null);
+        await storageMap.map({ stage, key: null, data, eof: !data });
 
         this._processingMap[hashMap] = (this._processingMap[hashMap] || 0) - 1;
 
-        const isReady = await this.ask("isProcessing", {
-            session, stage, key: null,
-        });
-console.log("isReady", isReady);
+        if (!this._processingMap[hashMap]) {
+            delete this._processingMap[hashMap];
+        }
 
-        if (isReady) {
-            this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
-                // serverNames.forEach((serverName) => {
-                //     this.sendToServer(serverName, session, stage, key, null);
-                // });
-            });
+        if (!data) {
+            this.startUnlessTimeout(async () => {
+                const isReady = !await this.ask("isProcessing", {
+                    session, stage, key: null,
+                });
+        
+                if (isReady) {
+                    this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
+                        // serverNames.forEach((serverName) => {
+                        //     this.sendToServer(serverName, session, stage, key, null);
+                        // });
+                    });
+                }
+
+                return !isReady;
+            }, 100);
         }
 
         this.destroyStorageMap(hash);
