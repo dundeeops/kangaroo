@@ -7,8 +7,6 @@ const argv = require('yargs').argv;
 // TODO: Implement AccumulatorStream (using a stacking stream)
 
 const ConnectionService = require("./engine/ConnectionService.js");
-const MapTransform = require("./engine/MapTransformStream.js");
-const MapWritable = require("./engine/MapWritableStream.js");
 const WorkerService = require("./engine/WorkerService.js");
 const ManagerService = require("./engine/ManagerService.js");
 const TimeoutErrorTimer = require("./engine/TimeoutErrorTimer.js");
@@ -64,22 +62,34 @@ const manager = new ManagerService({
 
 worker.setStream("init", (key, send) => {
     let state = false;
-    return async ({ data }) => {
-        state = !state;
-        await send("final", state ? "final" : "final_alt", data);
+    return async ({ data, eof }) => {
+        if (!eof) {
+            state = !state;
+            await send("reduce_2_flows", state ? "final" : "final_alt", data);
+        }
     };
 });
 
-worker.setStream("mediator", (key, send) => {
-    return async ({ data }) => {
-        await send("final", "final", data);
+worker.setStream("reduce_2_flows", (key, send) => {
+    return async ({ data, eof }) => {
+        if (!eof) {
+            await send("map", null, data);
+        }
     };
 });
 
-worker.setStream("final", (key) => {
+worker.setStream("map", (key, send) => {
+    return async ({ data, eof }) => {
+        if (!eof) {
+            await send("final_reduce", "final", data);
+        }
+    };
+});
+
+worker.setStream("final_reduce", (key) => {
     let sum = "";
-    return async ({ data }) => {
-        if (data) {
+    return async ({ data, eof }) => {
+        if (!eof) {
             console.log("line", key, data);
             sum += data + "\n";
         } else {

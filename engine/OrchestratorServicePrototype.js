@@ -18,9 +18,14 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
 
     async send(session, stage, key, data) {
         const serverName = await this.getSessionStageKeyConnection(session, stage, key);
+        await this.sendToServer(serverName, session, stage, key, data);
+        return serverName;
+    }
+
+    async sendToServer(serverName, session, stage, key, data) {
         const connection = this._connectionService.getConnection(serverName);
         const raw = serializeData({ session, stage, key, data });
-        connection.sendData(raw + "\n");
+        return connection.sendData(raw + "\n");
     }
 
     getSessionStageKeyServer(session, stage, key) {
@@ -60,6 +65,15 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         return serverName;
     }
 
+    async notify(type, data) {
+        const promises = [];
+        this._connectionService
+            .getConnections()
+            .forEach(connection => {
+                promises.push(connection.ask(type, data));
+            });
+        await Promise.all(promises);
+    }
 
     async ask(type, data) {
         const promises = [];

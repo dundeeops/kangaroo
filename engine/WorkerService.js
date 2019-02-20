@@ -1,7 +1,6 @@
-const { pipeline, Writable, Readable } = require("stream");
 const {
     serializeData,
-    deserializeData,
+    getId,
     getHash,
 } = require("./SerializationUtil.js");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
@@ -21,10 +20,16 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             onData: async (...args) => await this.onData(...args),
         });
         this._mappers = {};
-        this._stageKeyStreamMap = {};
 
-        this._streamMap = {};
-        this._queue = [];
+        this._processingMap = {};
+        this._storageMap = {};
+            
+        // TODO: Notify all key and send null to them
+        // socket.write(serializeData({
+        //     id,
+        //     type: "finish",
+        //     data: { session, stage, key },
+        // }) + "\n");
     }
 
     async onAsk(socket, id, type, data) {
@@ -35,6 +40,14 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     id,
                     type,
                     data: serverName,
+                }) + "\n");
+                break;
+            case "isProcessing":
+                const hash = getHash(data.session, data.stage, data.key);
+                socket.write(serializeData({
+                    id,
+                    type,
+                    data: this._processingMap[hash] ? true : null,
                 }) + "\n");
                 break;
         }
@@ -61,210 +74,173 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return mapper;
     }
 
-    async makeMap(session, _stage, _key, mapper) {
+    async makeMap(hash, session, _key, mapper) {
         const send = async (stage, key, data) => {
-            this.setMapSessionKey(session, _stage, _key, {stage, key});
-            await this.send(session, stage, key, data);
+            this.setMapSessionKey(hash, stage, key);
+            const serverName = await this.send(session, stage, key, data);
+            this.addMapServerName(hash, stage, key, serverName);
         };
         const map = await mapper(_key, send);
         return map;
     }
 
-    setMap(hash, map) {
-        this._streamMap[hash] = { map, keys: {} };
+    makeStorageMap(hash) {
+        let resolveEOF = () => {};
+        const promiseEOF = new Promise((r) => resolveEOF = r);
+        this._storageMap[hash] = { map: null, keys: {}, session: 0, promiseEOF, resolveEOF };
     }
 
-    setMapSessionKey(session, stage, key, data) {
-        const hash = getHash(session, stage, key);
-        const hashStageKey = getHash(data.stage, data.key);
-        if (!this._streamMap[hash].keys[hashStageKey]) {
-            this._streamMap[hash].keys[hashStageKey] = {
-                stage: data.stage, key: data.key,
+    setMapSessionKey(hash, stage, key) {
+        const hashStageKey = getHash(stage, key);
+        if (!this._storageMap[hash].keys[hashStageKey]) {
+            this._storageMap[hash].keys[hashStageKey] = {
+                stage, key, serverNames: [],
             };
         }
     }
 
-    forEachMapSessionKey(session, stage, key, callback) {
-        const hash = getHash(session, stage, key);
-        if (this._streamMap[hash]
-            && this._streamMap[hash].keys[hashStageKey]) {
-            Object.keys(this._streamMap[hash].keys).forEach(({stage, key}, index) => callback(stage, key, index))
+    addMapServerName(hash, stage, key, serverName) {
+        const hashStageKey = getHash(stage, key);
+        if (this._storageMap[hash].keys[hashStageKey].serverNames.indexOf(serverName) === -1) {
+            this._storageMap[hash].keys[hashStageKey].serverNames.push(serverName);
         }
     }
 
-    // increaseMapSessionKey(session, stage, key) {
-    //     const hash = getHash(session, stage, key);
-    //     const hashStageKey = getHash(session, stage, key);
-    //     if (!this._streamMap[hash].session[hashStageKey]) {
-    //         this._streamMap[hash].session[hashStageKey] = 0;
-    //     }
-    //     this._streamMap[hash].session[hashStageKey]++;
-    // }
+    forEachStorageMapSessionKey(hash, callback) {
+        Object.keys(this._storageMap[hash].keys)
+            .forEach((hashStageKey, index) => {
+                const { stage, key, serverNames } = this._storageMap[hash].keys[hashStageKey];
+                callback(stage, key, serverNames, index);
+            });
+    }
 
-    // decreaseMapSessionKey(session, stage, key) {
-    //     const hash = getHash(session, stage, key);
-    //     const hashStageKey = getHash(session, stage, key);
-    //     if (this._streamMap[hash].session[hashStageKey]) {
-    //         this._streamMap[hash].session[hashStageKey]--;
-    //     }
-    // }
+    increaseStorageMapCount(hash) {
+        this._storageMap[hash].session++;
+    }
 
-    unsetMap(session, stage, key) {
-        const hash = getHash(session, stage, key);
-        delete this._streamMap[hash];
+    decreaseStorageMapCount(hash) {
+        this._storageMap[hash].session--;
+    }
+
+    async waitStorageMapCount(hash) {
+        await this._storageMap[hash].promiseEOF;
+    }
+
+    resolveStorageMapCount(hash) {
+        if (this._storageMap[hash].session === 0) {
+            this._storageMap[hash].resolveEOF();
+        }
+    }
+
+    destroyStorageMap(hash) {
+        delete this._storageMap[hash];
     }
 
     getMap(hash) {
-       return this._streamMap[hash] && this._streamMap[hash].map;
+       return this._storageMap[hash] && this._storageMap[hash].map;
     }
 
-    async getStorageMap(session, stage, key) {
-        const hash = getHash(session, stage, key);
-        let map = this._streamMap[hash];
+    checkStorageMap(hash) {
+        let map = this._storageMap[hash];
 
         if (!map) {
+            this.makeStorageMap(hash);
+        }
+    }
+
+    async getStorageMap(hash, session, stage, key) {
+        const storageMap = this._storageMap[hash];
+
+        if (!storageMap.map) {
             const mapper = this.getMapper(stage);
-            map = await this.makeMap(session, stage, key, mapper);
-            this.setMap(hash, map);
+            storageMap.map = await this.makeMap(hash, session, key, mapper);
         }
 
-        return map;
+        return storageMap;
     }
 
     async onData(socket, obj) {
-        this._queue.push({socket, obj});
-        await this._queuePromise;
-        await this.emptyQueue();
+        const {key} = obj;
+        if (key == null) {
+            this.onDataMap(socket, obj);
+        } else {
+            this.onDataReduce(socket, obj);
+        }
     }
 
-    async emptyQueue() {
-        const {socket, obj} = this._queue.shift();
-        this._queuePromise = new Promise(async (r) => {
-            await this.onDataProcess(socket, obj);
-            r();
-        });
-        await this._queuePromise;
-    }
-
-    async onDataProcess(socket, { session, stage, key, data }) {
+    async onDataReduce(socket, { session, stage, key, data }) {
         const hash = getHash(session, stage, key);
 
-        if (data != null) {
-            console.log("BEFORE OPEN MAP", stage, key);
-            const map = await this.getStorageMap(session, stage, key);
-            await map({ stage, key, data });
-            console.log("OPEN MAP", stage, key, this._streamMap[hash]);
-        } else {
-            console.log("CLOSE MAP", stage, key, this._streamMap[hash]);
-
-            this.forEachMapSessionKey(session, stage, key, (stage, key, index) => {
-                console.log("GET", stage, key, index);
-            })
-            
-            // socket.write(serializeData({
-            //     id,
-            //     type: "finish",
-            //     data: { session, stage, key },
-            // }) + "\n");
-
-            // TODO: Notify all key and send null to them
-
-            this.unsetMap(session, stage, key);
+        if (!this._storageMap[hash] && data == null) {
+            return;
         }
-    }
+        
+        this.checkStorageMap(hash);
 
-    // TODO: Remove all below
+        if (data != null) {
+            this.increaseStorageMapCount(hash);
+        }
 
-    getMapStream() {
-        const _service = this;
-        return new Writable({
-            async write(chunk, encoding, callback) {
-                const raw = chunk.toString();
-                const { session, stage, key, data } = deserializeData(raw);
+        const storageMap = await this.getStorageMap(hash, session, stage, key);
+        await storageMap.map({ stage, key, data, eof: !data });
+        
+        if (data != null) {
+            this.decreaseStorageMapCount(hash);
+            this.resolveStorageMapCount(hash);
+        }
 
-                if (data != null) {
-                    const map = await _service.getStorageMap(session, stage, key);
-                    await map({ stage, key, data });
-                } else {
-                    _service.unsetMap(session, stage, key);
-                }
-
-                callback();
-            },
-            final(callback) {
-                callback();
-            }
-        });
-    }
-
-    _getMapStream() {
-        const _service = this;
-        return new Writable({
-            write(chunk, encoding, callback) {
-                const raw = chunk.toString();
-                
-                const { session, stage, key, data } = deserializeData(raw);
-                const hash = getHash(session, stage, key);
-                if (data) {
-                    const stream = _service.getStageKeyStreamOrCreate(hash, session, stage, key);
-                    stream.push(raw);
-                } else {
-                    const stream = _service.getStageKeyStream(hash);
-                    if (stream) {
-                        stream.push(null);
-                        stream.destroy();
-                    }
-                }
-                callback();
-            },
-            final(callback) {
-                callback();
-            }
-        });
-    }
-
-    getStageKeyStream(hash) {
-        return this._stageKeyStreamMap[hash] && this._stageKeyStreamMap[hash].stream;
-    }
-
-    getStageKeyStreamOrCreate(hash, session, stage, key) {
-        if (!this._stageKeyStreamMap[hash]) {
-            const _service = this;
-            const readStream = new Readable({
-                autoDestroy: true,
-                read() {},
-                destroy(error, callback) {
-                    _service._stageKeyStreamMap[hash] = undefined;
-                    delete _service._stageKeyStreamMap[hash];
-                    callback();
-                },
+        if (data == null) {
+            await this.waitStorageMapCount(hash);
+            console.log("Notify Map Finished", session, stage, key, !!data);
+            this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
+                serverNames.forEach((serverName) => {
+                    this.sendToServer(serverName, session, stage, key, null);
+                });
             });
 
-            this._stageKeyStreamMap[hash] = {
-                stream: readStream,
-                pipeline: pipeline(
-                    readStream,
-                    ...this.getMapStreams(session, stage, key),
-                ),
-            };
+            this.destroyStorageMap(hash);
         }
-        return this.getStageKeyStream(hash);
     }
 
-    getMapStreams(session, stage, key) {
-        const mapper = this._mappers[stage];
-        const stream = mapper(key);
-        if (stream instanceof Readable) {
-            // TODO: release used resources
-            return [
-                stream,
-                this.getOutcomeStream(session, stage, key),
-            ]
-        } else {
-            // TODO: release used resources
-            return [
-                stream,
-            ];
+    async onDataMap(socket, { session, stage, data }) {
+        const hash = getHash(session, stage, getId());
+        const hashMap = getHash(session, stage, null);
+        
+        this._processingMap[hashMap] = (this._processingMap[hashMap] || 0) + 1;
+
+        if (!this._storageMap[hash] && data == null) {
+            console.log("Notify All Finished", session, stage);
+            
+            await this.notify("finishProcessing", {
+                session, stage, key: null,
+            });
+
+            return;
         }
+
+        this.checkStorageMap(hash);
+
+        if (data != null) {
+            const storageMap = await this.getStorageMap(hash, session, stage, null);
+            await storageMap.map({ stage, key: null, data, eof: false });
+            await storageMap.map({ stage, key: null, data: null, eof: true });
+        }
+
+        this._processingMap[hashMap] = (this._processingMap[hashMap] || 0) - 1;
+
+        const isReady = await this.ask("isProcessing", {
+            session, stage, key: null,
+        });
+console.log("isReady", isReady);
+
+        if (isReady) {
+            this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
+                // serverNames.forEach((serverName) => {
+                //     this.sendToServer(serverName, session, stage, key, null);
+                // });
+            });
+        }
+
+        this.destroyStorageMap(hash);
     }
 }

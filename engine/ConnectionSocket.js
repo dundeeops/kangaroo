@@ -181,6 +181,6 @@ module.exports = class ConnectionSocket extends EventEmitter {
     }
 
     sendData(data) {
-        this.push(data);
+        return this.push(data);
     }
 }
