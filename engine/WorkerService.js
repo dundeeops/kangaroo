@@ -48,21 +48,22 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 socket.write(serializeData({
                     id,
                     type,
-                    data: this._processingMap[data.group] && this._processingMap[data.group].processes ? true : null,
+                    data: this._processingMap[data.group]
+                        && this._processingMap[data.group].processes
+                            ? true
+                            : null,
                 }) + "\n");
                 break;
             case "nullAchived":
-                // if (this._waitingNullResolveMap[data.group]) {
-                //     this._waitingNullResolveMap[data.group]();
-                // }
-
-                this.startUnlessTimeout(async () => {
+                await this.startUnlessTimeout(async () => {
                     if (this._processingMap[data.group]) {
                         const isReady = !this._processingMap[data.group].processes
                             && !await this.ask("isProcessing", { group: data.group });
 
                         if (isReady) {
-                            console.log("NULL ACHIVED!");
+                            this.forEachStorageMaps(data.group, (map) => {
+                                map.onFinish();
+                            });
 
                             this.forEachUsedGroups(data.group, (nextGroup) => {
                                 this.notify("nullAchived", {
@@ -86,8 +87,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return Object.keys(this._mappers);
     }
 
-    setMap(key, callbackStream) {
-        this._mappers[key] = callbackStream;
+    setMap(key, map) {
+        this._mappers[key] = map;
     }
 
     async start() {
@@ -95,8 +96,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     getMapper(stage) {
-        const mapper = this._mappers[stage];
-        return mapper;
+        return this._mappers[stage];
     }
 
     getSendWrap(group, session) {
@@ -110,7 +110,17 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     async makeMap(group, session, key, mapper) {
         const send = this.getSendWrap(group, session);
         const map = await mapper(key, send);
-        return map;
+        if (Array.isArray(map)) {
+            return {
+                onData: map[0],
+                onFinish: map[1],
+            };
+        } else {
+            return {
+                onData: map,
+                onFinish: () => {},
+            };
+        }
     }
 
     makeStorageMap(group, hash) {
@@ -121,6 +131,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         if (this._processingMap[group].usedGroups.indexOf(nextGroup) === -1) {
             this._processingMap[group].usedGroups.push(nextGroup);
         }
+    }
+
+    forEachStorageMaps(group, callback) {
+        Object.keys(this._processingMap[group].storageMap)
+            .forEach((hash, index) => {
+                callback(this._processingMap[group].storageMap[hash].map, hash, index);
+            });
     }
 
     forEachUsedGroups(group, callback) {
@@ -135,7 +152,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     getMap(group, hash) {
-       return this._processingMap[group].storageMap[hash] && this._processingMap[group].storageMap[hash].map;
+        return this._processingMap[group].storageMap[hash]
+            && this._processingMap[group].storageMap[hash].map;
     }
 
     checkStorageMap(group, hash) {
@@ -175,7 +193,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this.checkStorageMap(group, hash);
 
         const storageMap = await this.getStorageMap(group, hash, session, stage, key);
-        await storageMap.map({ stage, key, data, eof: !data });
+        await storageMap.map.onData({ stage, key, data, eof: !data });
 
         if (!key) {
             this.destroyStorageMap(group, hash);
@@ -192,6 +210,6 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 setTimeout(func, timeout);
             }
         }
-        setTimeout(func, timeout);
+        await func();
     }
 }

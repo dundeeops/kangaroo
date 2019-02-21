@@ -82,10 +82,15 @@ worker.setMap("map", (key, send) => {
 
 worker.setMap("final_reduce", (key) => {
     let sum = "";
-    return async ({ data }) => {
-        console.log("line", key, data);
-        sum += data + "\n";
-    };
+    return [
+        async ({ data }) => {
+            console.log("line", key, data);
+            sum += data + "\n";
+        },
+        () => {
+            console.log(sum);
+        },
+    ];
 });
 
 // Run Worker
