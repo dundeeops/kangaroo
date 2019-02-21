@@ -9,6 +9,7 @@ module.exports = class SendWritableStream extends Writable {
         super(options);
         this._decoder = new StringDecoder(options.defaultEncoding);
         this._send = options.send;
+        this._onFinish = options.onFinish;
         this._session = options.session;
         this._group = options.group;
         this._stage = options.stage;
@@ -49,6 +50,7 @@ module.exports = class SendWritableStream extends Writable {
         }
 
         // this.sendFinal();
+        this._onFinish();
 
         callback();
     }

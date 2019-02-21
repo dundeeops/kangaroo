@@ -60,42 +60,31 @@ const manager = new ManagerService({
 
 // Mapping
 
-worker.setStream("init", (key, send) => {
+worker.setMap("init", (key, send) => {
     let state = false;
-    return async ({ data, eof }) => {
-        if (!eof) {
-            state = !state;
-            await send("reduce_2_flows", state ? "final" : "final_alt", data);
-        }
+    return async ({ data }) => {
+        state = !state;
+        await send("reduce_2_flows", state ? "final" : "final_alt", data);
     };
 });
 
-worker.setStream("reduce_2_flows", (key, send) => {
-    return async ({ data, eof }) => {
-        if (!eof) {
-            await send("map", null, data);
-        }
+worker.setMap("reduce_2_flows", (key, send) => {
+    return async ({ data }) => {
+        await send("map", null, data);
     };
 });
 
-worker.setStream("map", (key, send) => {
-    return async ({ data, eof }) => {
-        if (!eof) {
-            await send("final_reduce", "final", data);
-        }
+worker.setMap("map", (key, send) => {
+    return async ({ data }) => {
+        await send("final_reduce", "final", data);
     };
 });
 
-worker.setStream("final_reduce", (key) => {
+worker.setMap("final_reduce", (key) => {
     let sum = "";
-    return async ({ data, eof }) => {
-        if (!eof) {
-            console.log("line", key, data);
-            sum += data + "\n";
-        } else {
-            console.log("final", sum);
-            console.log("The data has been processed!", key);
-        }
+    return async ({ data }) => {
+        console.log("line", key, data);
+        sum += data + "\n";
     };
 });
 

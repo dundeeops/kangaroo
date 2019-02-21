@@ -39,7 +39,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                 callback();
             },
             final(callback) {
-                this.push(serializeData({ session, stage, key, data: null }));
+                // this.push(serializeData({ session, stage, key, data: null }));
                 callback();
             }
         });
@@ -53,10 +53,15 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
     }
 
     getOutcomeStream(session, stage, key) {
+        const group = getHash(session, stage);
         return new SendWritableStream({
             send: this.send.bind(this),
-            group: getHash(session, stage),
-            session, stage, key
+            onFinish: () => {
+                this.notify("nullAchived", {
+                    group,
+                });
+            },
+            session, group, stage, key,
         });
     }
 }
