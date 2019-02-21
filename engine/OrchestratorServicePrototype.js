@@ -1,6 +1,4 @@
 const EventEmitter = require("./EventEmitter.js");
-const SendWritableStream = require("./SendWritableStream.js");
-const EventStreamTransformStream = require("./EventStreamTransformStream.js");
 const {
     serializeData,
     getHash,
@@ -16,15 +14,15 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         this._sessionStageKeyMap = {};
     }
 
-    async send(session, stage, key, data) {
+    async send(session, group, stage, key, data) {
         const serverName = await this.getSessionStageKeyConnection(session, stage, key);
-        await this.sendToServer(serverName, session, stage, key, data);
+        await this.sendToServer(serverName, session, group, stage, key, data);
         return serverName;
     }
 
-    async sendToServer(serverName, session, stage, key, data) {
+    async sendToServer(serverName, session, group, stage, key, data) {
         const connection = this._connectionService.getConnection(serverName);
-        const raw = serializeData({ session, stage, key, data });
+        const raw = serializeData({ session, group, stage, key, data });
         return connection.sendData(raw + "\n");
     }
 
@@ -70,7 +68,7 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         this._connectionService
             .getConnections()
             .forEach(connection => {
-                promises.push(connection.ask(type, data));
+                promises.push(connection.notify(type, data));
             });
         await Promise.all(promises);
     }
@@ -83,23 +81,6 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
                 promises.push(connection.ask(type, data));
             });
         return await this.raceData(promises);
-    }
-
-    getLinesStream() {
-        return new EventStreamTransformStream();
-    }
-
-    errorProcessing(err) {
-        if (err) {
-            console.error("Pipeline failed.", err);
-        }
-    }
-
-    getOutcomeStream(session, stage, key) {
-        return new SendWritableStream({
-            send: this.send.bind(this),
-            session, stage, key
-        });
     }
 
     shuffle(a) {

@@ -61,6 +61,12 @@ module.exports = class ConnectionSocket extends EventEmitter {
         });
     }
 
+    async notify(type, data) {
+        this.push(serializeData({
+            type, data,
+        }) + "\n");
+    }
+
     isAlive() {
         return !!this._socket;
     }

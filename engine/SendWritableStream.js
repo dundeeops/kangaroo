@@ -10,6 +10,7 @@ module.exports = class SendWritableStream extends Writable {
         this._decoder = new StringDecoder(options.defaultEncoding);
         this._send = options.send;
         this._session = options.session;
+        this._group = options.group;
         this._stage = options.stage;
         this._key = options.key;
     }
@@ -18,7 +19,7 @@ module.exports = class SendWritableStream extends Writable {
         const { stage, key, data } = deserializeData(raw);
         // console.log("COMPARE", this._stage, this._key, stage, key);
         
-        this._send(this._session, stage, key, data);
+        this._send(this._session, this._group, stage, key, data);
     }
 
     // sendFinal() {

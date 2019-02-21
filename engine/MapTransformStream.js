@@ -13,7 +13,7 @@ module.exports = class MapTransformStream extends Transform {
         return deserializeData(raw);
     }
 
-    send({ session, stage, key, data }) {
-        this.push(serializeData({ session, stage, key, data }));
+    send({ session, group, stage, key, data }) {
+        this.push(serializeData({ session, group, stage, key, data }));
     }
 }

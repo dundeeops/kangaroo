@@ -22,6 +22,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._mappers = {};
 
         this._processingMap = {};
+        this._waitingNullMap = {};
+        this._waitingNullResolveMap = {};
         this._storageMap = {};
             
         // TODO: Notify all key and send null to them
@@ -43,12 +45,16 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 }) + "\n");
                 break;
             case "isProcessing":
-                const hash = getHash(data.session, data.stage, data.key);
                 socket.write(serializeData({
                     id,
                     type,
-                    data: this._processingMap[hash] ? true : null,
+                    data: this._processingMap[data.group] ? true : null,
                 }) + "\n");
+                break;
+            case "nullAchived":
+                if (this._waitingNullResolveMap[data.group]) {
+                    this._waitingNullResolveMap[data.group]();
+                }
                 break;
         }
     }
@@ -74,10 +80,10 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return mapper;
     }
 
-    async makeMap(hash, session, _key, mapper) {
+    async makeMap(hash, session, group, _key, mapper) {
         const send = async (stage, key, data) => {
             this.setMapSessionKey(hash, stage, key);
-            const serverName = await this.send(session, stage, key, data);
+            const serverName = await this.send(session, getHash(group, stage), stage, key, data);
             this.addMapServerName(hash, stage, key, serverName);
         };
         const map = await mapper(_key, send);
@@ -146,12 +152,12 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
     }
 
-    async getStorageMap(hash, session, stage, key) {
+    async getStorageMap(hash, session, group, stage, key) {
         const storageMap = this._storageMap[hash];
 
         if (!storageMap.map) {
             const mapper = this.getMapper(stage);
-            storageMap.map = await this.makeMap(hash, session, key, mapper);
+            storageMap.map = await this.makeMap(hash, session, group, key, mapper);
         }
 
         return storageMap;
@@ -177,7 +183,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         setTimeout(func, timeout);
     }
 
-    async onDataReduce(socket, { session, stage, key, data }) {
+    async onDataReduce(socket, { session, group, stage, key, data }) {
         const hash = getHash(session, stage, key);
 
         if (!this._storageMap[hash] && data == null) {
@@ -190,7 +196,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             this.increaseStorageMapCount(hash);
         }
 
-        const storageMap = await this.getStorageMap(hash, session, stage, key);
+        const storageMap = await this.getStorageMap(hash, session, group, stage, key);
         await storageMap.map({ stage, key, data, eof: !data });
         
         if (data != null) {
@@ -213,11 +219,15 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
     }
 
-    async onDataMap(socket, { session, stage, data }) {
+    async onDataMap(socket, { session, group, stage, data }) {
         const hash = getHash(session, stage, getId());
         const hashMap = getHash(session, stage, null);
         
-        this._processingMap[hashMap] = (this._processingMap[hashMap] || 0) + 1;
+        this._processingMap[group] = (this._processingMap[group] || 0) + 1;
+
+        if (!this._waitingNullMap[group]) {
+            this._waitingNullMap[group] = new Promise((r) => this._waitingNullResolveMap[group] = r);
+        }
 
         // if (!this._storageMap[hash] && data == null) {
         //     console.log("Notify All Finished", session, stage);
@@ -229,35 +239,41 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         //     return;
         // }
 
-        console.log("NULL", !data);
-
         this.checkStorageMap(hash);
 
-        const storageMap = await this.getStorageMap(hash, session, stage, null);
+        const storageMap = await this.getStorageMap(hash, session, group, stage, null);
         await storageMap.map({ stage, key: null, data, eof: !data });
 
-        this._processingMap[hashMap] = (this._processingMap[hashMap] || 0) - 1;
+        this._processingMap[group] = (this._processingMap[group] || 0) - 1;
+        this._waitingNullMap[group] = true;
 
-        if (!this._processingMap[hashMap]) {
-            delete this._processingMap[hashMap];
+        if (!this._processingMap[group]) {
+            delete this._processingMap[group];
         }
 
         if (!data) {
+            await this.notify("nullAchived", { group });
+
+            await this._waitingNullMap[group];
             this.startUnlessTimeout(async () => {
-                const isReady = !await this.ask("isProcessing", {
-                    session, stage, key: null,
-                });
+                const isReady = !await this.ask("isProcessing", { group });
         
                 if (isReady) {
-                    this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
+                    console.log("NULL ACHIVED!");
+
+                    // this.forEachStorageMapSessionKey(hash, (stage, key, serverNames) => {
+                    //     console.log("NULL ACHIVED!");
                         // serverNames.forEach((serverName) => {
                         //     this.sendToServer(serverName, session, stage, key, null);
                         // });
-                    });
+                    // });
                 }
 
                 return !isReady;
             }, 100);
+
+            delete this._waitingNullMap[group];
+            delete this._waitingNullResolveMap[group];
         }
 
         this.destroyStorageMap(hash);
