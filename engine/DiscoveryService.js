@@ -12,6 +12,7 @@ const DIR = "/noremap";
 const SERVERS_KEY = "servers";
 const STREAMS_KEY = "streams";
 
+// TODO: Implement watch new or removed servers
 module.exports = class DiscoveryService {
 
     constructor(options) {

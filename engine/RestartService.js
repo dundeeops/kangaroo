@@ -2,6 +2,7 @@ const domain = require("domain");
 const TimeoutError = require("./TimeoutErrorTimer.js");
 
 const RESTART_TIMEOUT = 5000;
+const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a service";
 
 module.exports = class RestartService {
     constructor(options) {
@@ -14,7 +15,7 @@ module.exports = class RestartService {
         this._timeoutError = new TimeoutError({
             ...(options.timeout || {}),
             onError: this.onErrorTimeout.bind(this),
-            message: options.timeoutErrorMessage || "TIMEOUT: Error starting a service"
+            message: options.timeoutErrorMessage || DEFAULT_TIMEOUT_ERROR_MESSAGE
         });
 
         this._shouldRestart = options.restart != null ? options.restart : true;

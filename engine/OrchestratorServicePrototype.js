@@ -4,12 +4,12 @@ const {
     getHash,
 } = require("./SerializationUtil.js");
 
+// TODO: Make connection chooser (prefer by a ping and with minimum CPU loadout) & Add a custom picking function
 module.exports = class OrchestratorServicePrototype extends EventEmitter {
 
     constructor(options) {
         super();
         this._connectionService = options.connectionService;
-        // this._preferableServerName = options.preferableServerName;
 
         this._sessionStageKeyMap = {};
     }

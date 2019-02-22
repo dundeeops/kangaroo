@@ -1,7 +1,8 @@
 const EventEmitterPrototype = require("events");
 
+// TODO: Remove EventEmitter
 module.exports = class EventEmitter extends EventEmitterPrototype {
-    constructor(options) {
+    constructor() {
         super();
     }
 

@@ -7,13 +7,15 @@ const {
 } = require("./SerializationUtil.js");
 const RestartService = require("./RestartService.js");
 
+const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
+
 module.exports = class WorkerServer extends EventEmitter {
     constructor(options) {
         super();
         this._hostname = options.hostname;
         this._port = options.port;
         this._getMappers = options.getMappers;
-        this._onAnswer = options.onAnswer;
+        this._onAsk = options.onAsk;
         this._onData = options.onData;
 
         this._server = null;
@@ -28,7 +30,7 @@ module.exports = class WorkerServer extends EventEmitter {
             },
             run: this.run.bind(this),
             isAlive: () => !!this._server,
-            timeoutErrorMessage: "TIMEOUT: Error starting a server",
+            timeoutErrorMessage: DEFAULT_TIMEOUT_ERROR_MESSAGE,
             ...options.restart,
         });
     }
@@ -68,7 +70,7 @@ module.exports = class WorkerServer extends EventEmitter {
                     .pipe(es.map(async (obj, cb) => {
                         const { id, type, data } = obj;
                         if (type) {
-                            await this._onAnswer(socket, id, type, data);
+                            await this._onAsk(socket, id, type, data);
                         } else {
                             await this._onData(socket, obj);
                         }

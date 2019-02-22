@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const separator = ":_:";
 
 function cleanString(str) {
-    return str.replace(/(\n|\r)$/, '').trim();
+    return str.replace(/(\n|\r)$/, "").trim();
 }
 
 function serializeData(data) {
@@ -20,7 +20,12 @@ function getServerName(hostname, port) {
 }
 
 function getHash(...args) {
-    return crypto.createHash('sha1').update(args.join(separator)).digest('base64');
+    return crypto
+        .createHash("sha1")
+        .update(
+            args.join(separator),
+        )
+        .digest("base64");
 }
 
 function getId() {
