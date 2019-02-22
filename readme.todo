@@ -1,0 +1,16 @@
+Milestone:
+    ☐ Migrate events to handlers
+    ☐ Add stream accumulation functionality
+    ☐ Test with multiple connections
+    ☐ Test with large data
+    ☐ Implement error catching
+
+Future:
+    ☐ Allow to use deployable scripts for static clusterization
+    ☐ Allow to use deployable non JS apps
+    ☐ Test with Real Big Data
+    ☐ Test with Real Cluster
+    ☐ Rewrite to use Typescript +3
+
+Archive:
+    ✔ Start using Todo+
