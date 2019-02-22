@@ -1,6 +1,8 @@
 # Kangaroo Framework (NodeJS :heart: Big Data)
 
-![Kangaroo Framework](./logo.svg){ width="100" style="display: block; margin: 0 auto" }
+<p align="center">
+  <img width="100" src="./logo.svg">
+</p>
 
 > `The framework is under an development stage`
 
