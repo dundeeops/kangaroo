@@ -1,6 +1,6 @@
 # Kangaroo Framework (NodeJS :heart: Big Data)
 
-![Kangaroo Framework](./logo.svg)
+![Kangaroo Framework](./logo.svg | width=50)
 
 > `The framework is under an development stage`
 
