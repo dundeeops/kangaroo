@@ -1,7 +1,7 @@
 # Kangaroo Framework (NodeJS :heart: Big Data)
 
 <p align="center">
-  <img width="200" src="./logo.svg">
+  <img width="300" src="./logo.svg">
 </p>
 
 > `The framework is under an development stage`
