@@ -45,6 +45,7 @@ module.exports = class ConnectionSocket extends EventEmitter {
                 onError: () => r(),
             });
 
+            // TODO: Remove unlimited event listners
             this.onceIfTrue(name, (id, type, data) => {
                 if (id === sessionId) {
                     timeoutError.stop();
