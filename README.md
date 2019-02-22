@@ -6,7 +6,7 @@
 
 This is is an open-source distributed general-purpose cluster-computing framework (Big Data processing tool).
 
-> `Complex solutions requires simple tools`
+> `Complex solutions require simple tools`
 
 Kangaroo uses streams, so in order of that you need to manipulate your data only throught ones. You should divide your processings into steps and segregate data by keys (or without them to spread as widely as possible throught the processing servers). To store your data there is a possobility to use tools like HDFS or smth else. To add a reliability and increase processing capacity you can implement accumulator streams.
 
