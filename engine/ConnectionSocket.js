@@ -19,7 +19,7 @@ const defaultOptions = {
     onReceiveInfo: () => {},
     onError: () => {},
     askTimeout: DEFAULT_ASK_TIMEOUT,
-}
+};
 
 module.exports = class ConnectionSocket {
     constructor(_options) {

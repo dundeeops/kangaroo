@@ -9,7 +9,7 @@ const {
 const NO_CONNECTIONS_ERROR = "There are no alive servers";
 const ENDING = "\n";
 
-const defaultOptions = {}
+const defaultOptions = {};
 
 // TODO: Make connection chooser (prefer by a ping and with minimum CPU loadout) & Add a custom picking function
 module.exports = class OrchestratorServicePrototype {

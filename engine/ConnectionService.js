@@ -12,7 +12,7 @@ const TIMEOUT_ERROR_CONNECTION = "TIMEOUT: Error connecting with workers";
 
 const defaultOptions = {
     poolingTimeout: POOLING_TIMEOUT,
-}
+};
 
 module.exports = class ConnectionService {
     constructor(_options) {

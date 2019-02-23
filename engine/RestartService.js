@@ -4,27 +4,65 @@ const TimeoutError = require("./TimeoutErrorTimer.js");
 const RESTART_TIMEOUT = 5000;
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a service";
 
+const defaultOptions = {
+    restart: true,
+    restartTimeout: RESTART_TIMEOUT,
+    run: (c) => c(),
+    isAlive: () => true,
+    onError: () => {},
+    onErrorTimeout: () => {},
+    timeout: {},
+    timeoutErrorMessage: DEFAULT_TIMEOUT_ERROR_MESSAGE,
+    inject: {
+        _setInterval: setInterval,
+        _clearInterval: clearInterval,
+        _domainCreate: domain.create,
+    },
+};
+
 module.exports = class RestartService {
-    constructor(options) {
+    constructor(_options) {
+        const options = {
+            ...defaultOptions,
+            ..._options,
+        };
+
+        this._shouldRestart = options.restart;
+        this._restartTimeout = options.restartTimeout;
+        this._run = options.run;
+        this._isAlive = options.isAlive;
+        this._onError = options.onError;
+        this._onErrorTimeout = options.onErrorTimeout;
+
+        this.initInjections(options);
+
+        this.init(options);
+        this.initDomain();
+        this.initTimeoutError(options);
+    }
+
+    initInjections(options) {
+        this._setInterval = options.inject._setInterval;
+        this._clearInterval = options.inject._clearInterval;
+        this._domainCreate = options.inject._domainCreate;
+    }
+
+    init() {
         this._isStarting = false;
         this._restartInterval = null;
+    }
 
-        this._domain = domain.create();
+    initDomain() {
+        this._domain = this._domainCreate();
         this._domain.on("error", this.onError.bind(this));
+    }
 
+    initTimeoutError(options) {
         this._timeoutError = new TimeoutError({
-            ...(options.timeout || {}),
+            ...options.timeout,
             onError: this.onErrorTimeout.bind(this),
-            message: options.timeoutErrorMessage || DEFAULT_TIMEOUT_ERROR_MESSAGE
+            message: options.timeoutErrorMessage,
         });
-
-        this._shouldRestart = options.restart != null ? options.restart : true;
-        this._restartTimeout = options.restartTimeout || RESTART_TIMEOUT;
-
-        this._run = options.run || ((c) => c());
-        this._isAlive = options.isAlive || (() => true);
-        this._onError = options.onError || (() => {});
-        this._onErrorTimeout = options.onErrorTimeout || (() => {});
     }
 
     setRestart(value) {
@@ -50,7 +88,7 @@ module.exports = class RestartService {
     startRestart() {
         this._timeoutError.start();
         this.stopRestart();
-        this._restartInterval = setInterval(() => {
+        this._restartInterval = this._setInterval(() => {
             if (this._shouldRestart) {
                 this.start();
             }
@@ -59,7 +97,7 @@ module.exports = class RestartService {
 
     stopRestart() {
         if (this._restartInterval) {
-            clearInterval(this._restartInterval);
+            this._clearInterval(this._restartInterval);
             this._restartInterval = null;
         }
     }

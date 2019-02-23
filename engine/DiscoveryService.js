@@ -12,7 +12,7 @@ const STREAMS_KEY = "streams";
 
 const defaultOptions = {
     dir: DIR,
-}
+};
 
 // TODO: Implement watch new or removed servers and an example
 module.exports = class DiscoveryService {
