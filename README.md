@@ -35,6 +35,6 @@ Before using this tool you need to be shure of understanding Streams in [NodeJS 
 
   - Non implemented yet
 
-## Docs
+## Documentation
 
-> [TODO List](./docs/index.md)
+> [Open Docs](./docs/index.md)
