@@ -13,13 +13,13 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
 
     runStream(stage, stream, key, _getId = getId, _getHash = getHash, _es = es) {
         const session = _getId();
-        const group = getHash(session, stage);
+        const group = _getHash(session, stage);
 
         return stream
             .pipe(_es.split())
-            .pipe(_es.map((data, cb) => {
+            .pipe(_es.map((data, callback) => {
                 this.send(session, group, stage, key, data);
-                cb(null, null);
+                callback(null, null);
             }))
             .on("end", () => {
                 // TODO: Extract "nullAchived"

@@ -6,13 +6,25 @@ const {
     raceData,
 } = require("./PromisifyUtil");
 
+const NO_CONNECTIONS_ERROR = "There are no alive servers";
+const ENDING = "\n";
+
+const defaultOptions = {}
+
 // TODO: Make connection chooser (prefer by a ping and with minimum CPU loadout) & Add a custom picking function
 module.exports = class OrchestratorServicePrototype {
-
-    constructor(options) {
+    constructor(_options) {
+        const options = {
+            ...defaultOptions,
+            ..._options,
+        };
         this._connectionService = options.connectionService;
 
-        this._sessionStageKeyMap = {};
+        this.init(options);
+    }
+
+    init() {
+        this._sessionStageKeyMap = new Map();
     }
 
     async send(session, group, stage, key, data) {
@@ -21,23 +33,24 @@ module.exports = class OrchestratorServicePrototype {
         return serverName;
     }
 
-    async sendToServer(serverName, session, group, stage, key, data) {
+    async sendToServer(serverName, session, group, stage, key, data, _serializeData = serializeData) {
         const connection = this._connectionService.getConnection(serverName);
-        const raw = serializeData({ session, group, stage, key, data });
-        return connection.sendData(raw + "\n");
+        const raw = _serializeData({ session, group, stage, key, data });
+        return connection.sendData(raw + ENDING);
     }
 
-    getSessionStageKeyServer(session, stage, key) {
+    getSessionStageKeyServer(session, stage, key, _getHash = getHash) {
         const hash = getHash(session, stage, key);
-        return this._sessionStageKeyMap[hash];
+        return this._sessionStageKeyMap.get(hash);
     }
 
-    setSessionStageKeyServer(session, stage, key, server) {
-        const hash = getHash(session, stage, key);
-        this._sessionStageKeyMap[hash] = server;
+    setSessionStageKeyServer(session, stage, key, server, _getHash = getHash) {
+        const hash = _getHash(session, stage, key);
+        this._sessionStageKeyMap.set(hash, server);
     }
 
     async askSessionStageKeyServer(session, stage, key) {
+        // TODO: Extract "getSessionStageKeyServer"
         return await this.ask("getSessionStageKeyServer", {
             session, stage, key,
         });
@@ -74,14 +87,14 @@ module.exports = class OrchestratorServicePrototype {
         await Promise.all(promises);
     }
 
-    async ask(type, data) {
+    async ask(type, data, _raceData = raceData) {
         const promises = [];
         this._connectionService
             .getConnections()
             .forEach((connection) => {
                 promises.push(connection.ask(type, data));
             });
-        return await raceData(promises);
+        return await _raceData(promises);
     }
 
     shuffle(a) {
@@ -92,6 +105,7 @@ module.exports = class OrchestratorServicePrototype {
         return a;
     }
 
+    // TODO: Make connection orchestration
     getRandomSortedAliveConnections(stage) {
         return this.shuffle(
             Array.from(
@@ -110,7 +124,7 @@ module.exports = class OrchestratorServicePrototype {
         const sorted = this.getRandomSortedAliveConnections(stage);
 
         if (sorted.length === 0) {
-            throw Error("There are no alive servers");
+            throw Error(NO_CONNECTIONS_ERROR);
         }
 
         return sorted[0];
