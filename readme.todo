@@ -1,4 +1,13 @@
 Milestone:
+    Clusterization:
+        ✔ Make a Simple Static example @done(19-02-23 19:15)
+        ☐ Make a Discovery Service example
+        ☐ Make a Docker example
+        ☐ Make a Dynamic example
+        ☐ Make an Accumulation example
+        ☐ Make an ExpressJS example
+        ☐ Make an Error Processing example
+        ☐ Make a Stream example
     Refactoring:
         ✔ Migrate events to handlers @done(19-02-23 15:03)
         ☐ Make all injectable
