@@ -4,6 +4,7 @@ Milestone:
     ☐ Test with multiple connections
     ☐ Test with large data
     ☐ Implement error catching
+    ☐ Add Jest testing
 
 Future:
     ☐ Allow to use deployable scripts for static clusterization
