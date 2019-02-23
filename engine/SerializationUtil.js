@@ -1,18 +1,20 @@
 const safeStringify = require("fast-safe-stringify");
 const crypto = require("crypto");
 
+const {inject} = require("./InjectUtil.js");
+
 const separator = ":_:";
 
 function cleanString(str) {
-    return str.replace(/(\n|\r)$/, "").trim();
+    return str.toString().replace(/(\n|\r)$/, "").trim();
 }
 
-function serializeData(data) {
-    return safeStringify(data);
+function serializeData(data, _stringify = safeStringify) {
+    return _stringify(data);
 }
 
-function deserializeData(raw) {
-    return JSON.parse(cleanString(raw.toString()));
+function deserializeData(raw, _parse = JSON.parse, _cleanString = cleanString) {
+    return _parse(_cleanString(raw));
 }
 
 function getServerName(hostname, port) {
@@ -20,7 +22,8 @@ function getServerName(hostname, port) {
 }
 
 function getHash(...args) {
-    return crypto
+    const _crypto = inject("crypto", crypto, args[args.length - 1]);
+    return _crypto
         .createHash("sha1")
         .update(
             args.join(separator),
@@ -28,8 +31,8 @@ function getHash(...args) {
         .digest("base64");
 }
 
-function getId() {
-    return getHash(Math.random().toString())
+function getId(_getHash = getHash, _random = Math.random) {
+    return getHash(_random().toString())
 }
 
 module.exports = {
