@@ -24,4 +24,8 @@ const readConfig = (_readYamlFile = readYamlFile) => {
     }
 };
 
-module.exports = config = readConfig();
+module.exports = {
+    config: readConfig(),
+    readConfig,
+    readYamlFile,
+};

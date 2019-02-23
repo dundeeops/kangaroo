@@ -1,5 +1,4 @@
-const config = require("./Config.js");
-const argv = require('yargs').argv;
+const argv = require("yargs").argv;
 
 // Engine
 
@@ -11,7 +10,7 @@ const WorkerService = require("./engine/WorkerService.js");
 const ManagerService = require("./engine/ManagerService.js");
 const TimeoutErrorTimer = require("./engine/TimeoutErrorTimer.js");
 
-// Exit if "entrr" or "q" are pressed
+// Exit if "enter" or "q" are pressed
 
 const readline = require("readline");
 readline.emitKeypressEvents(process.stdin);
@@ -23,6 +22,7 @@ process.stdin.on("keypress", (str, key) => {
 });
 
 // Initialization
+const {config} = require("./Config.js");
 
 const connectionService = new ConnectionService({
     poolingConnections: config.servers
