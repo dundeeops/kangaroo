@@ -10,13 +10,30 @@ const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 const POOLING_TIMEOUT = 5000;
 const TIMEOUT_ERROR_CONNECTION = "TIMEOUT: Error connecting with workers";
 
+const defaultOptions = {
+    poolingTimeout: POOLING_TIMEOUT,
+}
+
 module.exports = class ConnectionService {
-    constructor(options) {
+    constructor(_options) {
+        const options = {
+            ...defaultOptions,
+            ..._options,
+        };
         this._poolingInterval = null;
-        this._poolingTimeout = options.poolingTimeout || POOLING_TIMEOUT;
+        this._poolingTimeout = options.poolingTimeout;
 
         this.init(options);
-        
+        this.initConnections(options);
+    }
+
+    init() {
+        this._connectionsMap = new Map();
+        this._resolversMap = new Map();
+        this._poolingConnectionsMap = new Map();
+    }
+
+    initConnections(options) {
         (options.connections || []).forEach(
             (connectionConfig) => this.addConnection(
                 connectionConfig.hostname,
@@ -30,12 +47,6 @@ module.exports = class ConnectionService {
                 connectionConfig.port,
             ),
         );
-    }
-
-    init() {
-        this._connectionsMap = new Map();
-        this._resolversMap = new Map();
-        this._poolingConnectionsMap = new Map();
     }
 
     async startPoolingConnections(timeout = this._poolingTimeout) {
