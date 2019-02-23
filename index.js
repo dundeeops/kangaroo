@@ -111,7 +111,7 @@ async function run() {
     manager.runStream(
         "init",
         fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
-    ).on("finish", () => {
+    ).on("end", () => {
         console.log("The data has been sent!");
         timeout.stop();
     });

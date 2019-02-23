@@ -14,7 +14,7 @@ This is is an open-source distributed general-purpose cluster-computing framewor
 
 Kangaroo uses streams, so in order of that you need to manipulate your data only throught ones. You should divide your processings into steps and segregate data by keys (or without them to spread as widely as possible throught the processing servers). To store your data there is a possobility to use tools like HDFS or smth else. To add a reliability and increase processing capacity you can implement accumulator streams.
 
-Before using this tool you need to be shure of understanding Streams in NodeJS [NodeJS Stream Docs](https://nodejs.org/api/stream.html).
+Before using this tool you need to be shure of understanding Streams in [NodeJS Stream Docs](https://nodejs.org/api/stream.html).
 
 ## Features
 
@@ -29,7 +29,7 @@ Before using this tool you need to be shure of understanding Streams in NodeJS [
 
 ## Todo
 
-> Read readme.todo
+> [TODO List](./readme.todo)
 
 ## Examples
 
