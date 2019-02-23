@@ -11,17 +11,18 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
         super(options);
     }
 
-    runStream(stage, stream, key) {
-        const session = getId();
+    runStream(stage, stream, key, _getId = getId, _getHash = getHash, _es = es) {
+        const session = _getId();
         const group = getHash(session, stage);
 
         return stream
-            .pipe(es.split())
-            .pipe(es.map((data, cb) => {
+            .pipe(_es.split())
+            .pipe(_es.map((data, cb) => {
                 this.send(session, group, stage, key, data);
                 cb(null, null);
             }))
             .on("end", () => {
+                // TODO: Extract "nullAchived"
                 this.notify("nullAchived", { group });
             });
     }

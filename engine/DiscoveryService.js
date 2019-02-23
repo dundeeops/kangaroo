@@ -2,22 +2,36 @@ const Etcd = require("node-etcd");
 const {
     promisify,
 } = require("./PromisifyUtil.js");
+
+// TODO: Separate from Etcd.prototype
 promisify(Etcd.prototype, ["set", "get", "del", "rmdir"]);
-// const {
-//     serializeData,
-//     deserializeData,
-// } = require("./SerializationUtil.js");
 
 const DIR = "/noremap";
 const SERVERS_KEY = "servers";
 const STREAMS_KEY = "streams";
 
-// TODO: Implement watch new or removed servers
-module.exports = class DiscoveryService {
+const defaultOptions = {
+    dir: DIR,
+}
 
-    constructor(options) {
+// TODO: Implement watch new or removed servers and an example
+module.exports = class DiscoveryService {
+    constructor(_options) {
+        const options = {
+            ...defaultOptions,
+            ..._options,
+        };
+        this._dir = options.dir;
+
+        this.init(options);
+        this.initEtcd(options);
+    }
+
+    init() {
         this._connection = null;
-        this._dir = options.dir || DIR;
+    }
+
+    initEtcd(options) {
         this._etcd = new Etcd(options.hosts, options);
     }
 
