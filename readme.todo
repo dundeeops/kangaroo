@@ -1,6 +1,9 @@
 Milestone:
     Refactoring:
         ✔ Migrate events to handlers @done(19-02-23 15:03)
+        ☐ Make all injectable
+        ☐ Split large functions
+        ☐ Split large classes
     Features:
         ☐ Add stream accumulation functionality
         ☐ Implement error catching
