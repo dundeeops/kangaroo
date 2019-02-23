@@ -6,6 +6,9 @@ const {
     deserializeData,
     getId,
 } = require("./SerializationUtil.js");
+const {
+    getPromise,
+} = require("./PromisifyUtil");
 const RestartService = require("./RestartService.js");
 const TimeoutError = require("./TimeoutErrorTimer.js");
 
@@ -49,8 +52,7 @@ module.exports = class ConnectionSocket {
     }
 
     addAskPromise(hash) {
-        let resolve = () => {};
-        const promise = new Promise((r) => resolve = r);
+        const [promise, resolve] = getPromise();
         const ask = this.makeAskPromise(promise, resolve);
         this._promiseAskMap[hash] = ask;
         return ask;

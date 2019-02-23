@@ -3,19 +3,24 @@ const path = require("path");
 const yaml = require("js-yaml");
 const argv = require('yargs').argv;
 
-const readConfig = () => {
-    const yamlConfig = yaml.safeLoad(
-        fs.readFileSync(
-            path.resolve(argv.config || "./config.yml"),
-            "utf8"
-        )
-    );
+const defaultConfig = {};
+const defauilPath = path.resolve((argv.config || "./config.yml"));
 
-    const name = argv.name || yamlConfig.name;
+function readYamlFile(pathToFile, _parseYaml = yaml.safeLoad, _readFile = fs.readFileSync) {
+    return _parseYaml(
+        _readFile(
+            pathToFile,
+            "utf8"
+        ),
+    );
+}
+
+const readConfig = (_readYamlFile = readYamlFile) => {
+    const yamlConfig = _readYamlFile(defauilPath);
 
     return {
+        ...defaultConfig,
         ...yamlConfig,
-        name,
     }
 };
 

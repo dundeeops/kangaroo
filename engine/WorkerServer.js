@@ -4,6 +4,9 @@ const {
     getServerName,
     serializeData,
 } = require("./SerializationUtil.js");
+const {
+    getPromise,
+} = require("./PromisifyUtil");
 const RestartService = require("./RestartService.js");
 
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
@@ -16,11 +19,8 @@ module.exports = class WorkerServer {
         this._onAsk = options.onAsk;
         this._onData = options.onData;
 
+        [this._promise, this._resolve] = getPromise();
         this._server = null;
-
-        this._resolve = () => {};
-        this._promise = new Promise((r) => this._resolve = r);
-
         this._service = new RestartService({
             onError: this.onError.bind(this),
             onErrorTimeout: (error) => {

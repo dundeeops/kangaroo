@@ -2,6 +2,9 @@ const ConnectionSocket = require("./ConnectionSocket.js");
 const {
     getServerName,
 } = require("./SerializationUtil.js");
+const {
+    getPromise,
+} = require("./PromisifyUtil");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 const POOLING_TIMEOUT = 5000;
@@ -51,8 +54,7 @@ module.exports = class ConnectionService {
         const promises = [];
         for (const name in this._poolingConnectionsMap) {
             const { hostname, port } = this._poolingConnectionsMap[name];
-            let resolve = () => {};
-            const promise = new Promise((r) => resolve = r);
+            const [promise, resolve] = getPromise();
             promises.push(promise);
             let connection;
             connection = new ConnectionSocket({

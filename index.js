@@ -50,12 +50,10 @@ const worker = new WorkerService({
         port: config.port,
     },
     connectionService,
-    preferableServerName: config.preferableServerName,
 });
 
 const manager = new ManagerService({
     connectionService,
-    preferableServerName: config.preferableServerName,
 });
 
 // Mapping

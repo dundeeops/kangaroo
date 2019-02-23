@@ -1,4 +1,15 @@
 module.exports = {
+
+    getPromise() {
+        let resolve = () => {};
+        let reject = () => {};
+        const promise = new Promise((r, e) => {
+            resolve = r;
+            reject = e;
+        });
+        return [promise, resolve, reject];
+    },
+
     promisify(obj, keys) {
         keys.forEach((key) => {
             const fn = obj[key];
