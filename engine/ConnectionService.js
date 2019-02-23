@@ -8,16 +8,14 @@ const {
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 const POOLING_TIMEOUT = 5000;
+const TIMEOUT_ERROR_CONNECTION = "TIMEOUT: Error connecting with workers";
 
 module.exports = class ConnectionService {
     constructor(options) {
-        this._connectionsMap = {};
-        this._resolvers = [];
-        this._resolversMap = {};
-        this._connections = [];
-        this._poolingConnectionsMap = {};
         this._poolingInterval = null;
         this._poolingTimeout = options.poolingTimeout || POOLING_TIMEOUT;
+
+        this.init(options);
         
         (options.connections || []).forEach(
             (connectionConfig) => this.addConnection(
@@ -34,12 +32,18 @@ module.exports = class ConnectionService {
         );
     }
 
-    async startPoolingConnections(timeout) {
+    init() {
+        this._connectionsMap = new Map();
+        this._resolversMap = new Map();
+        this._poolingConnectionsMap = new Map();
+    }
+
+    async startPoolingConnections(timeout = this._poolingTimeout) {
         if (!this._poolingInterval) {
             await this.stickOutPoolConnections();
             this._poolingInterval = setInterval(() => {
                 this.stickOutPoolConnections();
-            }, timeout || this._poolingTimeout);
+            }, timeout);
         }
     }
 
@@ -50,21 +54,27 @@ module.exports = class ConnectionService {
         }
     }
 
-    async connectPoolingConnections() {
+    async connectPoolingConnections(_getPromise = getPromise, _ConnectionSocket = ConnectionSocket) {
         const promises = [];
-        for (const name in this._poolingConnectionsMap) {
-            const { hostname, port } = this._poolingConnectionsMap[name];
-            const [promise, resolve] = getPromise();
+
+        this._poolingConnectionsMap.forEach(({ hostname, port }) => {
+
+            const [promise, resolve] = _getPromise();
             promises.push(promise);
-            let connection;
-            connection = new ConnectionSocket({
+
+            const connection = new _ConnectionSocket({
                 hostname, port,
+
+                // TODO: Store connection info
                 onReceiveInfo: (info) => {
                     resolve(connection);
                 },
+
+                // TODO: Log connection error
                 onError: (error) => {
                     resolve();
                 },
+
                 restart: {
                     restart: false,
                     onErrorTimeout: () => {
@@ -73,73 +83,71 @@ module.exports = class ConnectionService {
                     },
                 },
             });
+
             connection.connect();
-        }
+        });
+
         const connectionsRaw = await Promise.all(promises);
         return connectionsRaw.filter((connection) => !!connection);
     }
 
     async stickOutPoolConnections() {
         const connections = await this.connectPoolingConnections();
+
         connections.forEach((connection) => {
             const name = connection.getName();
             const hostname = connection.getHostname();
+            const port = connection.getPort();
+
             connection.setRestart(true);
             connection.setOnErrorTimeout(() => {
                 this.removeConnection(connection);
                 this.addPoolConnection(hostname, port);
                 connection.destroy();
-            })
-            const port = connection.getPort();
-            this._connections.push(connection);
-            this._connectionsMap[name] = connection;
+            });
+
             this.removePoolConnection(hostname, port);
+            this._connectionsMap.set(name, connection);
         });
     }
 
-    removePoolConnection(hostname, port) {
-        const name = getServerName(hostname, port);
-        delete this._poolingConnectionsMap[name];
+    removePoolConnection(hostname, port, _getServerName = getServerName) {
+        const name = _getServerName(hostname, port);
+        this._poolingConnectionsMap.delete(name);
     }
 
-    addPoolConnection(hostname, port) {
-        const name = getServerName(hostname, port);
-        this._poolingConnectionsMap[name] = { hostname, port };
+    addPoolConnection(hostname, port, _getServerName = getServerName) {
+        const name = _getServerName(hostname, port);
+        this._poolingConnectionsMap.set(name, { hostname, port });
     }
 
-    removeConnection(hostname, port) {
-        const name = getServerName(hostname, port);
-        this.removeItem(this._resolversMap, this._resolvers, name, this._resolversMap[name] && this._resolversMap[name].promise);
-        this.removeItem(this._connectionsMap, this._connections, name);
+    removeConnection(hostname, port, _getServerName = getServerName) {
+        const name = _getServerName(hostname, port);
+
+        this._resolversMap.delete(name);
+        this._connectionsMap.delete(name);
     }
 
-    removeItem(map, arr, hash, item) {
-        const index = arr.indexOf(item || map[hash]);
-        if (index > -1) {
-            arr.splice(index, 1);
-        }
-        delete map[hash];
-    }
-
-    addConnection(hostname, port) {
-        const name = getServerName(hostname, port);
-
-        this._resolversMap[name] = {};
-        const promise = new Promise((resolve) => {
-            this._resolversMap[name].resolve = resolve;
-        }).then(() => {
-            this.removeItem(this._resolversMap, this._resolvers, name, promise);
+    addConnection(hostname, port, _getServerName = getServerName, _getPromise = getPromise, _ConnectionSocket = ConnectionSocket) {
+        const name = _getServerName(hostname, port);
+        
+        const [promise, resolve] = _getPromise();
+        this._resolversMap.set(name, { promise, resolve, });
+        promise.then(() => {
+            this._resolversMap.delete(name);
         });
-        this._resolversMap[name].promise = promise;
 
-        this._resolvers.push(promise);
-
-        let connection;
-        connection = new ConnectionSocket({
+        const connection = new _ConnectionSocket({
             hostname, port,
+
+            // TODO: Store connection info
             onReceiveInfo: (info) => {
-                this._resolversMap[name] && this._resolversMap[name].resolve();
+                resolve();
             },
+
+            // TODO: Log connection error
+            onError: (error) => {},
+
             restart: {
                 onErrorTimeout: () => {
                     resolve();
@@ -148,28 +156,35 @@ module.exports = class ConnectionService {
             },
         });
 
-        this._connectionsMap[name] = connection;
-        this._connections.push(connection);
+        this._connectionsMap.set(name, connection);
 
         return [connection, promise];
     }
 
-    async start() {
-        const timeout = new TimeoutErrorTimer();
-        timeout.start("TIMEOUT: Error connecting with workers");
-        this._connections.forEach((connection) => {
+    async start(_TimeoutErrorTimer = TimeoutErrorTimer) {
+        const timeout = new _TimeoutErrorTimer();
+        timeout.start(TIMEOUT_ERROR_CONNECTION);
+
+        this._connectionsMap.forEach((connection) => {
             connection.connect();
         });
-        await Promise.all(this._resolvers);
+
+        await Promise.all(
+            Array.from(
+                this._resolversMap.values()
+            )
+        );
+
         await this.startPoolingConnections();
+
         timeout.stop();
     }
 
     getConnections() {
-        return this._connections;
+        return this._connectionsMap;
     }
 
     getConnection(name) {
-        return this._connectionsMap[name];
+        return this._connectionsMap.get(name);
     }
 }

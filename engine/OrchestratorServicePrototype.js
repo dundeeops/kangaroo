@@ -68,7 +68,7 @@ module.exports = class OrchestratorServicePrototype {
         const promises = [];
         this._connectionService
             .getConnections()
-            .forEach(connection => {
+            .forEach((connection) => {
                 promises.push(connection.notify(type, data));
             });
         await Promise.all(promises);
@@ -78,7 +78,7 @@ module.exports = class OrchestratorServicePrototype {
         const promises = [];
         this._connectionService
             .getConnections()
-            .forEach(connection => {
+            .forEach((connection) => {
                 promises.push(connection.ask(type, data));
             });
         return await raceData(promises);
@@ -94,12 +94,15 @@ module.exports = class OrchestratorServicePrototype {
 
     getRandomSortedAliveConnections(stage) {
         return this.shuffle(
-            this._connectionService
-            .getConnections()
-            .filter((server) => {
-                return server.isContainsStage(stage) && server.isAlive();
+            Array.from(
+                this._connectionService
+                    .getConnections()
+                    .values()
+            )
+            .filter((connection) => {
+                return connection.isContainsStage(stage) && connection.isAlive();
             })
-            .map((server) => server.getName())
+            .map((connection) => connection.getName())
         );
     }
 
