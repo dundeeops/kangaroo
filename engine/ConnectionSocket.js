@@ -1,23 +1,23 @@
 const { Writable } = require("stream");
 const net = require("net");
-const EventEmitter = require("./EventEmitter.js");
 const {
     getServerName,
     serializeData,
     deserializeData,
     getId,
-    getHash,
 } = require("./SerializationUtil.js");
 const RestartService = require("./RestartService.js");
 const TimeoutError = require("./TimeoutErrorTimer.js");
 
-module.exports = class ConnectionSocket extends EventEmitter {
+const DEFAULT_ASK_TIMEOUT = 1000;
+
+module.exports = class ConnectionSocket {
     constructor(options) {
-        super();
         this._onReceiveInfo = options.onReceiveInfo || (() => {});
         this._onError = options.onError || (() => {});
         this._hostname = options.hostname;
         this._port = options.port;
+        this._askTimeout = options.askTimeout || DEFAULT_ASK_TIMEOUT;
 
         this._socket = null;
         this._stream = this.makeStream();
@@ -25,6 +25,7 @@ module.exports = class ConnectionSocket extends EventEmitter {
             mappers: [],
         };
         this._accumulation = [];
+        this._promiseAskMap = {};
 
         this._service = new RestartService({
             onError: this.onError.bind(this),
@@ -35,31 +36,49 @@ module.exports = class ConnectionSocket extends EventEmitter {
         });
     }
 
+    onAsk({id, data}) {
+        if (this._promiseAskMap[id]) {
+            this._promiseAskMap[id].resolve(data);
+        }
+    }
+
+    makeAskPromise(promise, resolve) {
+        return {
+            promise, resolve,
+        };
+    }
+
+    addAskPromise(hash) {
+        let resolve = () => {};
+        const promise = new Promise((r) => resolve = r);
+        const ask = this.makeAskPromise(promise, resolve);
+        this._promiseAskMap[hash] = ask;
+        return ask;
+    }
+
+    deleteAskPromise(hash) {
+        delete this._promiseAskMap[hash];
+    }
+
     async ask(type, data) {
-        return new Promise((r) => {
-            const sessionId = getId();
-            const name = getHash("ask", type);
+        const hash = getId();
+        const ask = this.addAskPromise(hash);
 
-            const timeoutError = new TimeoutError({
-                timeout: 1000,
-                onError: () => r(),
-            });
-
-            // TODO: Remove unlimited event listners
-            this.onceIfTrue(name, (id, type, data) => {
-                if (id === sessionId) {
-                    timeoutError.stop();
-                    r(data);
-                    return true;
-                }
-            });
-
-            timeoutError.start();
-
-            this.push(serializeData({
-                id: sessionId, type, data,
-            }) + "\n");
+        const timeoutError = new TimeoutError({
+            timeout: this._askTimeout,
+            onError: () => ask.resolve(),
         });
+
+        timeoutError.start();
+        this.push(serializeData({
+            id: hash, type, data,
+        }) + "\n");
+        const result = await ask.promise;
+        timeoutError.stop();
+
+        this.deleteAskPromise(hash);
+
+        return result;
     }
 
     async notify(type, data) {
@@ -120,8 +139,7 @@ module.exports = class ConnectionSocket extends EventEmitter {
                         this._onReceiveInfo(this._info);
                         this.releaseAccumulator();
                     } else if (data.type) {
-                        const name = getHash("ask", data.type);
-                        this.emit(name, data.id, data.type, data.data);
+                        this.onAsk(data);
                     }
                 }
             });

@@ -4,7 +4,7 @@
   <img width="300" src="./logo.svg">
 </p>
 
-> `The framework is under an development stage`
+> `The framework is under development`
 
 ## Overview
 

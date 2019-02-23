@@ -1,6 +1,5 @@
 const net = require("net");
 const es = require("event-stream");
-const EventEmitter = require("./EventEmitter.js");
 const {
     getServerName,
     serializeData,
@@ -9,9 +8,8 @@ const RestartService = require("./RestartService.js");
 
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
-module.exports = class WorkerServer extends EventEmitter {
+module.exports = class WorkerServer {
     constructor(options) {
-        super();
         this._hostname = options.hostname;
         this._port = options.port;
         this._getMappers = options.getMappers;

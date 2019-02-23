@@ -18,4 +18,24 @@ module.exports = {
             obj[key + "Async"] = wrap;
         });
     },
+
+    async raceData(promises) {
+        let resolved = false;
+        return await new Promise((r, e) => {
+            promises.forEach((promise) => {
+                promise.then((data) => {
+                    if (data) {
+                        resolved = true;
+                        r(data);
+                    }
+                }).catch((error) => e(error));
+            });
+
+            Promise.all(promises).then(() => {
+                if (resolved === false) {
+                    r();
+                }
+            })
+        })
+    }
 }

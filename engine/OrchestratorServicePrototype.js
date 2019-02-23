@@ -1,14 +1,15 @@
-const EventEmitter = require("./EventEmitter.js");
 const {
     serializeData,
     getHash,
 } = require("./SerializationUtil.js");
+const {
+    raceData,
+} = require("./PromisifyUtil");
 
 // TODO: Make connection chooser (prefer by a ping and with minimum CPU loadout) & Add a custom picking function
-module.exports = class OrchestratorServicePrototype extends EventEmitter {
+module.exports = class OrchestratorServicePrototype {
 
     constructor(options) {
-        super();
         this._connectionService = options.connectionService;
 
         this._sessionStageKeyMap = {};
@@ -80,7 +81,7 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
             .forEach(connection => {
                 promises.push(connection.ask(type, data));
             });
-        return await this.raceData(promises);
+        return await raceData(promises);
     }
 
     shuffle(a) {

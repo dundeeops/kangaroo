@@ -1,5 +1,5 @@
 Milestone:
-    ☐ Migrate events to handlers
+    ✔ Migrate events to handlers @done(19-02-23 15:03)
     ☐ Add stream accumulation functionality
     ☐ Test with multiple connections
     ☐ Test with large data
