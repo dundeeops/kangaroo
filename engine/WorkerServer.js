@@ -11,17 +11,46 @@ const RestartService = require("./RestartService.js");
 
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
+const defaultOptions = {
+    inject: {
+        _net: net,
+    },
+};
+
 module.exports = class WorkerServer {
-    constructor(options) {
+    constructor(_options) {
+        const options = {
+            ...defaultOptions,
+            ..._options,
+        };
         this._hostname = options.hostname;
         this._port = options.port;
         this._getMappers = options.getMappers;
         this._onAsk = options.onAsk;
         this._onData = options.onData;
 
-        [this._promise, this._resolve] = getPromise();
+        this.initInjections(options);
+
+        this.init(options);
+
+        this.initPromise();
+        this.initService(options);
+    }
+
+    initInjections(options) {
+        this._net = options.inject._net;
+    }
+
+    init() {
         this._server = null;
-        this._service = new RestartService({
+    }
+
+    initPromise(_getPromise = getPromise) {
+        [this._promise, this._resolve] = _getPromise();
+    }
+
+    initService(options, _RestartService = RestartService) {
+        this._service = new _RestartService({
             onError: this.onError.bind(this),
             onErrorTimeout: (error) => {
                 throw error;
@@ -33,12 +62,13 @@ module.exports = class WorkerServer {
         });
     }
 
+    // TODO: Log error
     onError(error) {
         console.error(`Worker failed ${this.getName()}`, error.message, error.stack);
     }
 
-    getName() {
-        return getServerName(this._hostname, this._port);
+    getName(_getServerName = getServerName) {
+        return _getServerName(this._hostname, this._port);
     }
 
     async start() {
@@ -47,25 +77,25 @@ module.exports = class WorkerServer {
     }
 
     makeServer(onSocketConected, onConnect, onClose) {
-        const server = net.createServer(onSocketConected);
+        const server = this._net.createServer(onSocketConected);
         server.on("close", () => onClose());
         server.listen(this._port, this._hostname, () => onConnect());
         return server;
     }
 
-    run(callback) {
+    run(callback, _serializeData = serializeData, _es = es) {
         let server;
         server = this.makeServer(
             (socket) => {
-                socket.write(serializeData({
+                socket.write(_serializeData({
                     type: "info",
                     mappers: this._getMappers(),
                 }) + "\n");
 
                 socket 
-                    .pipe(es.split())
-                    .pipe(es.parse())
-                    .pipe(es.map(async (obj, cb) => {
+                    .pipe(_es.split())
+                    .pipe(_es.parse())
+                    .pipe(_es.map(async (obj, cb) => {
                         const { id, type, data } = obj;
                         if (type) {
                             await this._onAsk(socket, id, type, data);
@@ -76,12 +106,14 @@ module.exports = class WorkerServer {
                     }));
             },
             () => {
+                // TODO: Remove and replace with event
                 console.log(`Worker started with ${this.getName()}`);
                 this._server = server;
                 callback();
                 this._resolve();
             },
             () => {
+                // TODO: Remove and replace with event
                 console.log(`Worker stopped with ${this.getName()}`);
                 this._server = null;
                 callback();
