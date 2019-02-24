@@ -1,3 +1,11 @@
+# Simple test
+
+> [../examples/simple/index.js](../examples/simple/index.js)
+
+## Running
+
+`node index.js`
+
 # Additional Testing Commands
 
 # Running etcd:
