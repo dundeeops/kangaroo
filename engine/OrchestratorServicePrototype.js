@@ -5,9 +5,9 @@ const {
 const {
     raceData,
 } = require("./PromisifyUtil");
+const Dict = require("./AskDict.js");
 
 const NO_CONNECTIONS_ERROR = "There are no alive servers";
-const ENDING = "\n";
 
 const defaultOptions = {};
 
@@ -36,7 +36,7 @@ module.exports = class OrchestratorServicePrototype {
     async sendToServer(serverName, session, group, stage, key, data, _serializeData = serializeData) {
         const connection = this._connectionService.getConnection(serverName);
         const raw = _serializeData({ session, group, stage, key, data });
-        return connection.sendData(raw + ENDING);
+        return connection.sendData(raw + Dict.ENDING);
     }
 
     getSessionStageKeyServer(session, stage, key, _getHash = getHash) {
@@ -50,8 +50,7 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     async askSessionStageKeyServer(session, stage, key) {
-        // TODO: Extract "getSessionStageKeyServer"
-        return await this.ask("getSessionStageKeyServer", {
+        return await this.ask(Dict.GET_SESSION_STAGE_KEY_SERVER, {
             session, stage, key,
         });
     }

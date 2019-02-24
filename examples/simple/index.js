@@ -47,10 +47,8 @@ if (argv.c) {
 }
 
 const worker = new WorkerService({
-    server: {
-        hostname: config.hostname,
-        port: config.port,
-    },
+    hostname: config.hostname,
+    port: config.port,
     connectionService,
 });
 
@@ -60,7 +58,7 @@ const manager = new ManagerService({
 
 // Mapping
 
-worker.setMap("init", (key, send) => {
+worker.setMapper("init", (key, send) => {
     let state = false;
     return async ({ data }) => {
         state = !state;
@@ -68,19 +66,19 @@ worker.setMap("init", (key, send) => {
     };
 });
 
-worker.setMap("reduce_2_flows", (key, send) => {
+worker.setMapper("reduce_2_flows", (key, send) => {
     return async ({ data }) => {
         await send("map", null, data);
     };
 });
 
-worker.setMap("map", (key, send) => {
+worker.setMapper("map", (key, send) => {
     return async ({ data }) => {
         await send("final_reduce", "final", data);
     };
 });
 
-worker.setMap("final_reduce", (key) => {
+worker.setMapper("final_reduce", (key) => {
     let sum = "";
     return [
         async ({ data }) => {

@@ -4,10 +4,17 @@ const {
     getHash,
 } = require("./SerializationUtil.js");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
+const Dict = require("./AskDict.js");
+
+const defaultOptions = {};
 
 module.exports = class ManagerService extends OrchestratorServicePrototype {
 
-    constructor(options) {
+    constructor(_options) {
+        const options = {
+            ...defaultOptions,
+            ..._options,
+        };
         super(options);
     }
 
@@ -22,8 +29,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                 callback(null, null);
             }))
             .on("end", () => {
-                // TODO: Extract "nullAchived"
-                this.notify("nullAchived", { group });
+                this.notify(Dict.NULL_ACHIVED, { group });
             });
     }
 }

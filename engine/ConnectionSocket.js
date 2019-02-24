@@ -11,9 +11,10 @@ const {
 } = require("./PromisifyUtil");
 const RestartService = require("./RestartService.js");
 const TimeoutError = require("./TimeoutErrorTimer.js");
+const Dict = require("./AskDict.js");
+
 
 const DEFAULT_ASK_TIMEOUT = 1000;
-const ENDING = "\n";
 
 const defaultOptions = {
     onReceiveInfo: () => {},
@@ -92,7 +93,7 @@ module.exports = class ConnectionSocket {
         timeoutError.start();
         this.push(serializeData({
             id: hash, type, data,
-        }) + ENDING);
+        }) + Dict.ENDING);
         const result = await ask.promise;
         timeoutError.stop();
 
@@ -104,7 +105,7 @@ module.exports = class ConnectionSocket {
     async notify(type, data) {
         this.push(serializeData({
             type, data,
-        }) + ENDING);
+        }) + Dict.ENDING);
     }
 
     isAlive() {
@@ -149,7 +150,7 @@ module.exports = class ConnectionSocket {
         const socket = new net.Socket();
 
         socket.on("data", (raw) => {
-            raw.toString().split(ENDING).map((str) => {
+            raw.toString().split(Dict.ENDING).map((str) => {
                 if (str) {
                     const data = _deserializeData(str);
                     if (data.type === "info") {
