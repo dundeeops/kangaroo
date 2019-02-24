@@ -1,12 +1,9 @@
-const {
-    getId,
-} = require("./SerializationUtil");
 const FakeTimeout = require("./FakeTimeout.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
-export class FakeTimeoutErrorTimer extends TimeoutErrorTimer {
+module.exports = class FakeTimeoutErrorTimer extends TimeoutErrorTimer {
     constructor(_options) {
-        this._fakeTimeout = new FakeTimeout();
+        const fakeTimeout = new FakeTimeout();
         const options = {
             ..._options,
             inject: {
@@ -15,6 +12,7 @@ export class FakeTimeoutErrorTimer extends TimeoutErrorTimer {
             },
         };
         super(options);
+        this._fakeTimeout = fakeTimeout;
     }
 
     getFakeTimeout() {

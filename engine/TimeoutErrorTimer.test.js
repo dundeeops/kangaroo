@@ -1,6 +1,3 @@
-const {
-    getId,
-} = require("./SerializationUtil");
 const FakeTimeout = require("./FakeTimeout.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
@@ -81,4 +78,4 @@ describe("TimeoutErrorTimer", () => {
         expect(isStopped).toBe(false);
         expect(error.message).toBe("TEST");
     });
-})
+});

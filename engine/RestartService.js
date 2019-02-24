@@ -1,5 +1,5 @@
 const domain = require("domain");
-const TimeoutError = require("./TimeoutErrorTimer.js");
+const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 const RESTART_TIMEOUT = 5000;
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a service";
@@ -17,6 +17,7 @@ const defaultOptions = {
         _setInterval: setInterval,
         _clearInterval: clearInterval,
         _domainCreate: domain.create,
+        _TimeoutErrorTimer: TimeoutErrorTimer,
     },
 };
 
@@ -38,13 +39,14 @@ module.exports = class RestartService {
 
         this.init(options);
         this.initDomain();
-        this.initTimeoutError(options);
+        this.initTimeoutErrorTimer(options);
     }
 
     initInjections(options) {
         this._setInterval = options.inject._setInterval;
         this._clearInterval = options.inject._clearInterval;
         this._domainCreate = options.inject._domainCreate;
+        this._TimeoutErrorTimer = options.inject._TimeoutErrorTimer;
     }
 
     init() {
@@ -57,8 +59,8 @@ module.exports = class RestartService {
         this._domain.on("error", this.onError.bind(this));
     }
 
-    initTimeoutError(options) {
-        this._timeoutError = new TimeoutError({
+    initTimeoutErrorTimer(options) {
+        this._timeoutError = new this._TimeoutErrorTimer({
             ...options.timeout,
             onError: this.onErrorTimeout.bind(this),
             message: options.timeoutErrorMessage,

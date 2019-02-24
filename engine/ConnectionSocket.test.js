@@ -1,0 +1,182 @@
+const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
+const FakeRestartService = require("./FakeRestartService.js");
+const Dict = require("./AskDict.js");
+const ConnectionSocket = require("./ConnectionSocket.js");
+const FakeSocket = require("./FakeSocket.js");
+const {
+    serializeData,
+    deserializeData,
+} = require("./SerializationUtil.js");
+const {
+    startUnlessTimeout,
+} = require("./PromisifyUtil.js");
+
+const connectionSocketFactory = (onConnect) => {
+    const connectionSocket = new ConnectionSocket({
+        hostname: "test",
+        port: 3333,
+        onConnect,
+        inject: {
+            _net: {
+                Socket: FakeSocket,
+            },
+            _TimeoutErrorTimer: FakeTimeoutErrorTimer,
+            _RestartService: FakeRestartService,
+        }
+    });
+    return connectionSocket;
+}
+
+const sendSocketInfo = (socket, mappers = []) => socket.emit("data", serializeData({
+    type: "info", mappers,
+}) + Dict.ENDING);
+
+const waitSocket = (connectionSocket, getSocket, callback, mappers = []) => startUnlessTimeout(() => {
+    const socket = getSocket();
+    if (!socket) {
+        return true;
+    } else {
+        sendSocketInfo(socket, mappers);
+    }
+
+    if (connectionSocket.isAlive()) {
+        callback();
+        return false;
+    } else {
+        return true;
+    }
+}, 100);
+
+describe("ConnectionSocket", () => {
+
+    test("should get hostname", async () => {
+        const connectionSocket = connectionSocketFactory();
+        expect(connectionSocket.getHostname()).toBe("test");
+    });
+
+    test("should get port", async () => {
+        const connectionSocket = connectionSocketFactory();
+        expect(connectionSocket.getPort()).toBe(3333);
+    });
+
+    test("should get name", async () => {
+        const connectionSocket = connectionSocketFactory();
+        expect(connectionSocket.getName()).toBe("test:3333");
+    });
+
+    test("should be disconnected", async () => {
+        const connectionSocket = connectionSocketFactory();
+        expect(connectionSocket.isAlive()).toBe(false);
+    });
+
+    test("should connect", async () => {
+        let socket;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+        });
+        await new Promise((r) => {
+            connectionSocket.run(() => {});
+            waitSocket(connectionSocket, () => socket, r);
+        });
+        expect(connectionSocket.isAlive()).toBe(true);
+    });
+
+    test("should check mapper", async () => {
+        let socket;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+        });
+        await new Promise((r) => {
+            connectionSocket.run(() => {});
+            waitSocket(connectionSocket, () => socket, r, ["test"]);
+        });
+        expect(connectionSocket.isContainsStage("test")).toBe(true);
+        expect(connectionSocket.isContainsStage("testnon")).toBe(false);
+    });
+
+    test("should connect using service", async () => {
+        let socket;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+        });
+        await new Promise((r) => {
+            connectionSocket.connect();
+            waitSocket(connectionSocket, () => socket, r);
+        });
+        expect(connectionSocket.isAlive()).toBe(true);
+    });
+
+    test("should connect & destroy", async () => {
+        let socket;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+        });
+        await new Promise((r) => {
+            connectionSocket.connect();
+            waitSocket(connectionSocket, () => socket, r);
+        });
+        connectionSocket.destroy();
+        expect(connectionSocket.isAlive()).toBe(false);
+    });
+
+    test("should connect & send", async () => {
+        let socket;
+        let expectingData = "test" + Dict.ENDING;
+        let data;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+            socket.on("write", (_data) => {
+                data = _data;
+            });
+        });
+        await new Promise((r) => {
+            connectionSocket.run(() => {});
+            waitSocket(connectionSocket, () => socket, r);
+        });
+        connectionSocket.sendData(expectingData);
+        expect(data).toBe(expectingData);
+    });
+
+    test("should accumulate, connect & then send", async () => {
+        let socket;
+        let expectingData = "test" + Dict.ENDING;
+        let data;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+            socket.on("write", (_data) => {
+                data = _data;
+            });
+        });
+        connectionSocket.sendData(expectingData);
+        await new Promise((r) => {
+            waitSocket(connectionSocket, () => socket, r);
+        });
+        expect(data).toBe(expectingData);
+    });
+
+    test("should ask", async () => {
+        let socket;
+        const connectionSocket = connectionSocketFactory((_socket) => {
+            socket = _socket;
+            socket.on("write", (_data) => {
+                const { id, type, data } = deserializeData(_data);
+                socket.emit("data", serializeData({
+                    id,
+                    type,
+                    data: {
+                        response: data.message + type,
+                    },
+                }));
+            });
+        });
+        await new Promise((r) => {
+            connectionSocket.run(() => {});
+            waitSocket(connectionSocket, () => socket, r);
+        });
+        const promiseAsk = connectionSocket.ask("test", {
+            message: "test",
+        });
+        const result = await promiseAsk;
+        expect(result.response).toBe("testtest");
+    });
+});

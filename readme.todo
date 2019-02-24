@@ -21,7 +21,7 @@ Milestone:
         ☐ Add stream accumulation functionality
         ☐ Implement error catching
     Testing:
-        ☐ Add Jest testing
+        ☐ Add Jest testing @started(19-02-24 11:00)
         ☐ Test with multiple connections
         ☐ Test with large data
 
