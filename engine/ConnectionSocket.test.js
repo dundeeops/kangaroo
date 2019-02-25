@@ -1,51 +1,12 @@
-const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
-const FakeRestartService = require("./FakeRestartService.js");
 const Dict = require("./AskDict.js");
-const ConnectionSocket = require("./ConnectionSocket.js");
-const FakeSocket = require("./FakeSocket.js");
 const {
     serializeData,
     deserializeData,
 } = require("./SerializationUtil.js");
 const {
-    startUnlessTimeout,
-} = require("./PromisifyUtil.js");
-
-const connectionSocketFactory = (onConnect) => {
-    const connectionSocket = new ConnectionSocket({
-        hostname: "test",
-        port: 3333,
-        onConnect,
-        inject: {
-            _net: {
-                Socket: FakeSocket,
-            },
-            _TimeoutErrorTimer: FakeTimeoutErrorTimer,
-            _RestartService: FakeRestartService,
-        }
-    });
-    return connectionSocket;
-}
-
-const sendSocketInfo = (socket, mappers = []) => socket.emit("data", serializeData({
-    type: "info", mappers,
-}) + Dict.ENDING);
-
-const waitSocket = (connectionSocket, getSocket, callback, mappers = []) => startUnlessTimeout(() => {
-    const socket = getSocket();
-    if (!socket) {
-        return true;
-    } else {
-        sendSocketInfo(socket, mappers);
-    }
-
-    if (connectionSocket.isAlive()) {
-        callback();
-        return false;
-    } else {
-        return true;
-    }
-}, 100);
+    connectionSocketFactory,
+    waitSocket,
+} = require("./FakeConnectionSocket.js");
 
 describe("ConnectionSocket", () => {
 

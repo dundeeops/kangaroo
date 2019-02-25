@@ -12,6 +12,12 @@ const TIMEOUT_ERROR_CONNECTION = "TIMEOUT: Error connecting with workers";
 
 const defaultOptions = {
     poolingTimeout: POOLING_TIMEOUT,
+    inject: {
+        _setInterval: setInterval,
+        _clearInterval: clearInterval,
+        _ConnectionSocket: ConnectionSocket,
+        _TimeoutErrorTimer: TimeoutErrorTimer,
+    },
 };
 
 module.exports = class ConnectionService {
@@ -20,14 +26,23 @@ module.exports = class ConnectionService {
             ...defaultOptions,
             ..._options,
         };
-        this._poolingInterval = null;
         this._poolingTimeout = options.poolingTimeout;
+
+        this.initInjections(options);
 
         this.init(options);
         this.initConnections(options);
     }
 
+    initInjections(options) {
+        this._setInterval = options.inject._setInterval;
+        this._clearInterval = options.inject._clearInterval;
+        this._ConnectionSocket = options.inject._ConnectionSocket;
+        this._TimeoutErrorTimer = options.inject._TimeoutErrorTimer;
+    }
+
     init() {
+        this._poolingInterval = null;
         this._connectionsMap = new Map();
         this._resolversMap = new Map();
         this._poolingConnectionsMap = new Map();
@@ -52,7 +67,7 @@ module.exports = class ConnectionService {
     async startPoolingConnections(timeout = this._poolingTimeout) {
         if (!this._poolingInterval) {
             await this.stickOutPoolConnections();
-            this._poolingInterval = setInterval(() => {
+            this._poolingInterval = this._setInterval(() => {
                 this.stickOutPoolConnections();
             }, timeout);
         }
@@ -60,12 +75,12 @@ module.exports = class ConnectionService {
 
     stopPoolingConnections() {
         if (this._poolingInterval) {
-            clearInterval(this._poolingInterval);
+            this._clearInterval(this._poolingInterval);
             this._poolingInterval = null;
         }
     }
 
-    async connectPoolingConnections(_getPromise = getPromise, _ConnectionSocket = ConnectionSocket) {
+    async connectPoolingConnections(_getPromise = getPromise) {
         const promises = [];
 
         this._poolingConnectionsMap.forEach(({ hostname, port }) => {
@@ -73,7 +88,7 @@ module.exports = class ConnectionService {
             const [promise, resolve] = _getPromise();
             promises.push(promise);
 
-            const connection = new _ConnectionSocket({
+            const connection = new this._ConnectionSocket({
                 hostname, port,
 
                 // TODO: Store connection info
@@ -139,7 +154,7 @@ module.exports = class ConnectionService {
         this._connectionsMap.delete(name);
     }
 
-    addConnection(hostname, port, _getServerName = getServerName, _getPromise = getPromise, _ConnectionSocket = ConnectionSocket) {
+    addConnection(hostname, port, _getServerName = getServerName, _getPromise = getPromise) {
         const name = _getServerName(hostname, port);
         
         const [promise, resolve] = _getPromise();
@@ -148,7 +163,7 @@ module.exports = class ConnectionService {
             this._resolversMap.delete(name);
         });
 
-        const connection = new _ConnectionSocket({
+        const connection = new this._ConnectionSocket({
             hostname, port,
 
             // TODO: Store connection info
@@ -172,8 +187,8 @@ module.exports = class ConnectionService {
         return [connection, promise];
     }
 
-    async start(_TimeoutErrorTimer = TimeoutErrorTimer) {
-        const timeout = new _TimeoutErrorTimer();
+    async start() {
+        const timeout = new this._TimeoutErrorTimer();
         timeout.start(TIMEOUT_ERROR_CONNECTION);
 
         this._connectionsMap.forEach((connection) => {
