@@ -118,6 +118,7 @@ module.exports = class ConnectionService {
     }
 
     async stickOutPoolConnections() {
+        
         const connections = await this.connectPoolingConnections();
 
         connections.forEach((connection) => {
@@ -185,6 +186,13 @@ module.exports = class ConnectionService {
         this._connectionsMap.set(name, connection);
 
         return [connection, promise];
+    }
+
+    async addConnectionAndConnect(hostname, port) {
+        const [connection, promise] = this.addConnection(hostname, port);
+        connection.connect();
+        await promise;
+        return connection;
     }
 
     async start() {
