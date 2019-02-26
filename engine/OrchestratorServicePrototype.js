@@ -66,7 +66,8 @@ module.exports = class OrchestratorServicePrototype {
         }
 
         if (!serverName) {
-            serverName = await this.getRandomAliveConnection(stage);
+            const connection = await this.getRandomAliveConnection(stage);
+            serverName = connection.getName();
         }
 
         if (key) {
@@ -76,6 +77,7 @@ module.exports = class OrchestratorServicePrototype {
         return serverName;
     }
 
+    // TODO: Move into ConnectionService
     async notify(type, data) {
         const promises = [];
         this._connectionService
@@ -86,6 +88,7 @@ module.exports = class OrchestratorServicePrototype {
         await Promise.all(promises);
     }
 
+    // TODO: Move into ConnectionService
     async ask(type, data, _raceData = raceData) {
         const promises = [];
         this._connectionService
@@ -96,36 +99,21 @@ module.exports = class OrchestratorServicePrototype {
         return await _raceData(promises);
     }
 
-    shuffle(a) {
-        for (let i = a.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [a[i], a[j]] = [a[j], a[i]];
-        }
-        return a;
-    }
-
     // TODO: Make connection orchestration
-    getRandomSortedAliveConnections(stage) {
-        return this.shuffle(
-            Array.from(
-                this._connectionService
-                    .getConnections()
-                    .values()
-            )
-            .filter((connection) => {
-                return connection.isContainsStage(stage) && connection.isAlive();
-            })
-            .map((connection) => connection.getName())
-        );
-    }
+    getRandomAliveConnection(stage) {
+        const connections = Array.from(
+            this._connectionService
+                .getConnections()
+                .values()
+        )
+        .filter((connection) => {
+            return connection.isContainsStage(stage) && connection.isAlive();
+        });
 
-    async getRandomAliveConnection(stage) {
-        const sorted = this.getRandomSortedAliveConnections(stage);
-
-        if (sorted.length === 0) {
+        if (connections.length === 0) {
             throw Error(NO_CONNECTIONS_ERROR);
         }
 
-        return sorted[0];
+        return connections[Math.floor(Math.random() * connections.length)];
     }
 }

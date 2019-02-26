@@ -17,5 +17,19 @@ module.exports = class FakeAutoConnectionSocket extends ConnectionSocket {
             },
             ...options,
         });
+        this._askQueue = [];
+        this._notifyQueue = [];
+    }
+
+    async ask(type, data) {
+        if (type === "testAsk") {
+            return data;
+        }
+        this._askQueue.push({type, data});
+        return null;
+    }
+
+    async notify(type, data) {
+        this._notifyQueue.push({type, data});
     }
 }
