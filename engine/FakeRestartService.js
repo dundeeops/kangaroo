@@ -8,8 +8,8 @@ module.exports = class FakeRestartService extends RestartService {
         const options = {
             ..._options,
             inject: {
-                _setTimeout: fakeTimeout.getSetTimeout(),
-                _clearTimeout: fakeTimeout.getClearTimeout(),
+                _setInterval: fakeTimeout.getSetTimeout(),
+                _clearInterval: fakeTimeout.getClearTimeout(),
                 _domainCreate: () => ({
                     run: (fn) => {
                         fn();

@@ -14,6 +14,7 @@ const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 const defaultOptions = {
     inject: {
         _net: net,
+        _RestartService: RestartService,
     },
 };
 
@@ -39,6 +40,7 @@ module.exports = class WorkerServer {
 
     initInjections(options) {
         this._net = options.inject._net;
+        this._RestartService = options.inject._RestartService;
     }
 
     init() {
@@ -49,8 +51,8 @@ module.exports = class WorkerServer {
         [this._promise, this._resolve] = _getPromise();
     }
 
-    initService(options, _RestartService = RestartService) {
-        this._service = new _RestartService({
+    initService(options) {
+        this._service = new this._RestartService({
             onError: this.onError.bind(this),
             onErrorTimeout: (error) => {
                 throw error;

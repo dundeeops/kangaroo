@@ -1,6 +1,7 @@
 const EventEmitter = require("events");
+const {Readable} = require("stream");
 
-module.exports = class FakeSocket extends EventEmitter {
+module.exports = class FakeSocket extends Readable {
     constructor() {
         super();
     }
@@ -13,6 +14,8 @@ module.exports = class FakeSocket extends EventEmitter {
         this.emit("write", data);
         return true;
     }
+
+    _read() {}
 
     destroy() {
         this.emit("destroy", true);
