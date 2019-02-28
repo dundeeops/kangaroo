@@ -13,6 +13,7 @@ const Dict = require("./AskDict.js");
 const defaultOptions = {
     inject: {
         _startUnlessTimeout: startUnlessTimeout,
+        _WorkerServer: WorkerServer,
     },
 };
 
@@ -24,6 +25,10 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         const options = {
             ...defaultOptions,
             ..._options,
+            inject: {
+                ...defaultOptions.inject,
+                ..._options.inject,
+            }
         };
         super(options);
 
@@ -36,6 +41,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     initInjections(options) {
         this._startUnlessTimeout = options.inject._startUnlessTimeout;
+        this._WorkerServer = options.inject._WorkerServer;
     }
 
     initWorker() {
@@ -43,8 +49,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._processingMap = new Map();
     }
 
-    initServer(options, _WorkerServer = WorkerServer) {
-        this._server = new _WorkerServer({
+    initServer(options) {
+        this._server = new this._WorkerServer({
             hostname: options.hostname,
             port: options.port,
             getMappers: this.getMappers.bind(this),
