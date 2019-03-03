@@ -1,4 +1,6 @@
 const net = require("net");
+const { Writable } = require("stream");
+const es = require("event-stream");
 const {
     getServerName,
     serializeData,
@@ -28,10 +30,14 @@ const defaultOptions = {
 };
 
 module.exports = class ConnectionSocket {
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,
+            inject: {
+                ...defaultOptions.inject,
+                ..._options.inject,
+            },
         };
         this._onReceiveInfo = options.onReceiveInfo;
         this._onError = options.onError;
@@ -55,9 +61,6 @@ module.exports = class ConnectionSocket {
 
     init() {
         this._socket = null;
-        this._info = {
-            mappers: [],
-        };
         this._accumulatedData = [];
         this._promiseAskMap = new Map();
     }
@@ -117,10 +120,36 @@ module.exports = class ConnectionSocket {
         return result;
     }
 
+    async findConnection(type, data) {
+        const result = await this.ask(type, data);
+        return result ? this : null;
+    }
+
     async notify(type, data) {
         this.push(serializeData({
             type, data,
         }) + Dict.ENDING);
+    }
+
+    getUploadFileStream(_info, _getId = getId) {
+        const connection = this;
+        const id = _getId().replace("/", "_");
+        const type = Dict.UPLOAD;
+        let isInit = false;
+        const stream = new Writable({
+            async read() {},
+            async write(bytes, encoding, callback) {
+                const info = isInit ? null : _info;
+                isInit = true;
+                await connection.notify(type, { id, info, bytes });
+                callback(null, bytes);
+            },
+            async final(callback) {
+                await connection.notify(type, { id, info: null, bytes: null });
+                callback(null);
+            }
+        });
+        return stream;
     }
 
     isAlive() {
@@ -139,10 +168,6 @@ module.exports = class ConnectionSocket {
 
     setOnErrorTimeout(value) {
         this._service.setOnErrorTimeout(value);
-    }
-
-    isContainsStage(stage) {
-        return this._info.mappers.includes(stage);
     }
 
     getName() {
@@ -164,6 +189,7 @@ module.exports = class ConnectionSocket {
     run(callback, _deserializeData = deserializeData) {
         const socket = new this._net.Socket();
 
+        // TODO: ES
         socket.on("data", (raw) => {
             raw.toString().split(Dict.ENDING).map((str) => {
                 if (str) {
@@ -171,10 +197,9 @@ module.exports = class ConnectionSocket {
                     if (data.type === "info") {
                         // TODO: Move outside
                         this._socket = socket;
-                        this._info.mappers = data.mappers;
                         callback();
         
-                        this._onReceiveInfo(this._info);
+                        this._onReceiveInfo();
                         this.releaseAccumulator();
                     } else if (data.type) {
                         this.onAsk(data);
@@ -189,14 +214,18 @@ module.exports = class ConnectionSocket {
             this._onDisconnect(socket);
         });
 
-        socket.on("connect", () => {
+        socket.on("ready", () => {
             this._onConnect(socket);
         });
 
-        socket.connect(
-            this._port,
-            this._hostname
-        );
+        socket.on("error", (error) => {
+            this.onError(error);
+        });
+
+        socket.connect({
+            host: this._hostname,
+            port: this._port,
+        });
 
         return socket;
     }

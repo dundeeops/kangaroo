@@ -1,0 +1,10 @@
+{
+  "name": "kangaroo-test",
+  "version": "1.0.0",
+  "private": true,
+  "main": "test.js",
+  "license": "MIT",
+  "dependencies": {
+    "hello-world-npm": "^1.1.1"
+  }
+}

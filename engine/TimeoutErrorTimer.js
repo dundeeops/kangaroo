@@ -12,10 +12,14 @@ const defaultOptions = {
 };
 
 module.exports = class TimeoutErrorTimer {
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,
+            inject: {
+                ...defaultOptions.inject,
+                ..._options.inject,
+            },
         };
 
         this._timeoutInterval = options.timeout;

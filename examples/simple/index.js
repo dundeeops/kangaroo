@@ -14,12 +14,16 @@ const {
 
 // Exit if "enter" or "q" are pressed
 
+let onKey = () => {};
+
 const readline = require("readline");
 readline.emitKeypressEvents(process.stdin);
 process.stdin.setRawMode(true);
 process.stdin.on("keypress", (str, key) => {
     if (key.name === "q" || key.name === "return") {
         process.exit();
+    } else {
+        onKey(key.name);
     }
 });
 
@@ -27,7 +31,7 @@ process.stdin.on("keypress", (str, key) => {
 const {config} = require("./Config.js");
 
 const connectionService = new ConnectionService({
-    poolingConnections: config.servers
+    connections: config.servers
 });
 
 if (argv.c) {
@@ -91,16 +95,13 @@ worker.setMapper("final_reduce", (key) => {
     ];
 });
 
-// Run Worker
-
-worker.start();
-
 // Test Part
 
 const fs = require("fs");
 const path = require("path");
 
 async function run() {
+    await worker.start();
     await connectionService.start();
 
     let timeout = new TimeoutErrorTimer();
@@ -113,6 +114,36 @@ async function run() {
         console.log("The data has been sent!");
         timeout.stop();
     });
+
+    onKey = (key) => {
+        if (key === "l") {
+            const tar = require("tar");
+            manager.uploadModuleStream(
+                tar.c({
+                    gzip: true,
+                }, ["./test.js", "./package.json"]),
+                {
+                    id: "test",
+                    mappers: {
+                        "test.js": ["test"],
+                    },
+                },
+            ).on("end", async () => {
+                console.log("The uploading completed!");
+                const statuses = await manager.getStaticModulesStatus("test");
+                console.log(statuses);
+            });
+        } else if (key === "k") {
+            manager.runStream(
+                "test",
+                fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
+                "hello"
+            ).on("end", () => {
+                console.log("The data has been sent!");
+                timeout.stop();
+            });
+        }
+    }
 
     // manager.runStream(
     //     "init",

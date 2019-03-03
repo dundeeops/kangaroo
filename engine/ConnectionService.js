@@ -21,10 +21,14 @@ const defaultOptions = {
 };
 
 module.exports = class ConnectionService {
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,
+            inject: {
+                ...defaultOptions.inject,
+                ..._options.inject,
+            },
         };
         this._poolingTimeout = options.poolingTimeout;
 
@@ -205,8 +209,9 @@ module.exports = class ConnectionService {
 
         await Promise.all(
             Array.from(
-                this._resolversMap.values()
+                this._resolversMap.values(),
             )
+            .map((({promise}) => promise)),
         );
 
         await this.startPoolingConnections();

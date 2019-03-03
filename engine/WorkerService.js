@@ -1,9 +1,14 @@
+const path = require("path");
+const fs = require("fs");
+const tar = require("tar");
+const child_process = require("child_process");
 const {
     serializeData,
     getId,
     getHash,
 } = require("./SerializationUtil.js");
 const {
+    getPromise,
     startUnlessTimeout,
 } = require("./PromisifyUtil");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
@@ -11,6 +16,7 @@ const WorkerServer = require("./WorkerServer.js");
 const Dict = require("./AskDict.js");
 
 const defaultOptions = {
+    staticPath: path.resolve("./upload"),
     inject: {
         _startUnlessTimeout: startUnlessTimeout,
         _WorkerServer: WorkerServer,
@@ -21,16 +27,17 @@ const defaultOptions = {
 // TODO: Make accumulator
 module.exports = class WorkerService extends OrchestratorServicePrototype {
 
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,
             inject: {
                 ...defaultOptions.inject,
                 ..._options.inject,
-            }
+            },
         };
         super(options);
+        this._staticPath = options.staticPath;
 
         this.initInjections(options);
 
@@ -47,13 +54,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     initWorker() {
         this._mappers = new Map();
         this._processingMap = new Map();
+        this._staticMappersMap = new Map();
     }
 
     initServer(options) {
         this._server = new this._WorkerServer({
             hostname: options.hostname,
             port: options.port,
-            getMappers: this.getMappers.bind(this),
             onAsk: this.onAsk.bind(this),
             onData: this.onData.bind(this),
         });
@@ -62,8 +69,11 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     initOnAskMap() {
         this.onAskMap = {
             [Dict.GET_SESSION_STAGE_KEY_SERVER]: this.onAskGetSessionStageKeyServer.bind(this),
+            [Dict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
             [Dict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
             [Dict.NULL_ACHIVED]: this.onAskNullAchived.bind(this),
+            [Dict.UPLOAD]: this.onUpload.bind(this),
+            [Dict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
         };
     }
     
@@ -86,7 +96,114 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     : null,
         }) + Dict.ENDING);
     }
-    
+
+    onAskCanGetStage(socket, id, type, {stage}, _serializeData = serializeData) {
+        const mappers = this.getMappers();
+        const isContains = mappers.includes(stage);
+        socket.write(_serializeData({
+            id,
+            type,
+            data: isContains
+                ? true
+                : null,
+        }) + Dict.ENDING);
+    }
+
+    async deleteFolderRecursive(parentPath) {
+        if (fs.existsSync(parentPath)) {
+            fs.readdirSync(parentPath).forEach((file) => {
+                const curPath = path.resolve(parentPath, file);
+                if (fs.lstatSync(curPath).isDirectory()) {
+                    this.deleteFolderRecursive(curPath);
+                } else {
+                    fs.unlinkSync(curPath);
+                }
+            });
+            fs.rmdirSync(parentPath);
+        }
+    }
+
+    async onAskStaticModulesStatus(socket, id, type, data, _serializeData = serializeData) {
+        let staticMapper;
+        this._staticMappersMap.forEach(({info}) => {
+            if (info.id === data.id) {
+                staticMapper = info;
+            }
+        });
+
+        if (staticMapper) {
+            socket.write(_serializeData({
+                id,
+                type,
+                data: {
+                    isLoading: staticMapper.isLoading,
+                    id: staticMapper.id,
+                    mappers: staticMapper.mappers,
+                },
+            }) + Dict.ENDING);
+        }
+    }
+
+    // TODO: Split onUpload
+    async onUpload(socket, _id, type, data) {
+        const {id, info, bytes} = data;
+        let obj = this._staticMappersMap.get(id);
+
+        if (!obj) {
+            const [promise, resolve] = getPromise();
+            this._staticMappersMap.set(id, {
+                count: 0, promise, resolve,
+            });
+            obj = this._staticMappersMap.get(id);
+            obj.isLoading = true;
+        }
+
+        obj.count++;
+
+        if (info) {
+            const dir = path.resolve(this._staticPath, id);
+            await this.deleteFolderRecursive(dir);
+            await this.checkPathExist(dir);
+
+            const stream = tar.x({
+                C: dir,
+                sync: true,
+            });
+
+            obj.info = info;
+            obj.stream = stream;
+            obj.dir = dir;
+        }
+        
+        if (!bytes) {
+            await obj.promise;
+            obj.stream.end();
+            delete obj.stream;
+            // const infoPath = path.resolve(obj.dir, ".info");
+            // TODO: Make promise
+            // fs.writeFileSync(infoPath, JSON.stringify(obj.info));
+            obj.npmInstall = child_process.exec(
+                obj.info.init || "npm install --production",
+                    {
+                    cwd: obj.dir,
+                }, (error, stdout, stderr) => {
+                    
+                },
+            );
+            obj.npmInstall.stderr.pipe(process.stderr);
+            obj.npmInstall.on("end", () => {
+                delete obj.npmInstall;
+                obj.isLoading = false;
+            });
+        } else {
+            obj.stream.write(Buffer.from(bytes));
+            obj.count--;
+            if (obj.count === 0) {
+                obj.resolve();
+            }
+        }
+    }
+
     async onAskNullAchived(socket, id, type, data) {
         await this._startUnlessTimeout(async () => {
             if (this._processingMap.get(data.group)) {
@@ -120,19 +237,61 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     async start() {
+        await this.checkStaticPathExist();
         await this._server.start();
     }
 
+    async checkStaticPathExist() {
+        await this.checkPathExist(this._staticPath);
+    }
+
+    async checkPathExist(dir) {
+        if (!fs.existsSync(dir)){
+            fs.mkdirSync(dir);
+        }
+    }
+
     getMappers() {
-        return Array.from(this._mappers.keys());
+        let mappers = Array.from(this._mappers.keys());
+        this._staticMappersMap
+            .forEach((staticMapper) => {
+                Object
+                    .keys(staticMapper.info.mappers)
+                    .forEach((entry) => {
+                        mappers = mappers.concat(staticMapper.info.mappers[entry]);
+                    })
+            });
+        return mappers;
     }
 
     setMapper(stage, map) {
         this._mappers.set(stage, map);
     }
 
+    getStaticMapper(stage) {
+        let resultStaticMap = null;
+        let resultEntry = null;
+        Array.from(this._staticMappersMap.values())
+            .find((staticMap) => {
+                let entry = Object
+                    .keys(staticMap.info.mappers)
+                    .find((entry) => staticMap.info.mappers[entry].includes(stage));
+                if (entry) {
+                    resultStaticMap = staticMap;
+                    resultEntry = entry;
+                }
+                return !!entry;
+            });
+
+        return require(path.resolve(resultStaticMap.dir, resultEntry))[stage];
+    }
+
     getMapper(stage) {
-        return this._mappers.get(stage);
+        let mapper = this._mappers.get(stage);
+        if (!mapper) {
+            mapper = this.getStaticMapper(stage);
+        }
+        return mapper;
     }
 
     getSendWrap(group, session, _getHash = getHash) {

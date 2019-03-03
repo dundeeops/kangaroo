@@ -13,7 +13,7 @@ const defaultOptions = {};
 
 // TODO: Make connection chooser (prefer by a ping and with minimum CPU loadout) & Add a custom picking function
 module.exports = class OrchestratorServicePrototype {
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,
@@ -66,7 +66,8 @@ module.exports = class OrchestratorServicePrototype {
         }
 
         if (!serverName) {
-            const connection = await this.getRandomAliveConnection(stage);
+            // TODO: Cache responses
+            const connection = await this.findStageConnection(stage);
             serverName = connection.getName();
         }
 
@@ -99,21 +100,38 @@ module.exports = class OrchestratorServicePrototype {
         return await _raceData(promises);
     }
 
-    // TODO: Make connection orchestration
-    getRandomAliveConnection(stage) {
-        const connections = Array.from(
-            this._connectionService
-                .getConnections()
-                .values()
-        )
-        .filter((connection) => {
-            return connection.isContainsStage(stage) && connection.isAlive();
+    // TODO: Move into ConnectionService
+    async findConnection(type, data, _raceData = raceData) {
+        const promises = [];
+        this._connectionService
+            .getConnections()
+            .forEach((connection) => {
+                promises.push(connection.findConnection(type, data));
+            });
+        return await _raceData(promises);
+    }
+
+    // TODO: Move into ConnectionService
+    async askAll(type, data) {
+        const promises = [];
+        this._connectionService
+            .getConnections()
+            .forEach((connection) => {
+                promises.push(connection.ask(type, data));
+            });
+        const result = await Promise.all(promises);
+        return result.filter((r) => !!r);
+    }
+
+    async findStageConnection(stage) {
+        const connection = await this.findConnection(Dict.CAN_GET_STAGE, {
+            stage,
         });
 
-        if (connections.length === 0) {
+        if (!connection) {
             throw Error(NO_CONNECTIONS_ERROR);
         }
 
-        return connections[Math.floor(Math.random() * connections.length)];
+        return connection;
     }
 }

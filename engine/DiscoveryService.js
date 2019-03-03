@@ -16,7 +16,7 @@ const defaultOptions = {
 
 // TODO: Implement watch new or removed servers and an example
 module.exports = class DiscoveryService {
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,

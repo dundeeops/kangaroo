@@ -6,7 +6,7 @@ const {
 } = require("./SerializationUtil.js");
 const {
     getPromise,
-} = require("./PromisifyUtil");
+} = require("./PromisifyUtil.js");
 const RestartService = require("./RestartService.js");
 
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
@@ -14,19 +14,23 @@ const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 const defaultOptions = {
     inject: {
         _net: net,
+        _es: es,
         _RestartService: RestartService,
     },
 };
 
 module.exports = class WorkerServer {
-    constructor(_options) {
+    constructor(_options = {}) {
         const options = {
             ...defaultOptions,
             ..._options,
+            inject: {
+                ...defaultOptions.inject,
+                ..._options.inject,
+            },
         };
         this._hostname = options.hostname;
         this._port = options.port;
-        this._getMappers = options.getMappers;
         this._onAsk = options.onAsk;
         this._onData = options.onData;
 
@@ -40,6 +44,7 @@ module.exports = class WorkerServer {
 
     initInjections(options) {
         this._net = options.inject._net;
+        this._es = options.inject._es;
         this._RestartService = options.inject._RestartService;
     }
 
@@ -64,7 +69,7 @@ module.exports = class WorkerServer {
         });
     }
 
-    // TODO: Log error
+    // TODO: Log error & event
     onError(error) {
         console.error(`Worker failed ${this.getName()}`, error.message, error.stack);
     }
@@ -78,26 +83,27 @@ module.exports = class WorkerServer {
         await this._promise;
     }
 
-    makeServer(onSocketConected, onConnect, onClose) {
-        const server = this._net.createServer(onSocketConected);
+    makeServer(onSocketConnected, onConnect, onClose) {
+        const server = this._net.createServer(onSocketConnected);
         server.on("close", () => onClose());
-        server.listen(this._port, this._hostname, () => onConnect());
+        server.on("error", (error) => this.onError(error));
+        server.on("listening", () => onConnect());
+        server.listen(this._port, this._hostname);
         return server;
     }
 
-    run(callback, _serializeData = serializeData, _es = es) {
+    run(callback, _serializeData = serializeData) {
         let server;
         server = this.makeServer(
             (socket) => {
                 socket.write(_serializeData({
                     type: "info",
-                    mappers: this._getMappers(),
                 }) + "\n");
 
                 socket 
-                    .pipe(_es.split())
-                    .pipe(_es.parse())
-                    .pipe(_es.map(async (obj, cb) => {
+                    .pipe(this._es.split())
+                    .pipe(this._es.parse())
+                    .pipe(this._es.map(async (obj, cb) => {
                         const { id, type, data } = obj;
                         if (type) {
                             await this._onAsk(socket, id, type, data);

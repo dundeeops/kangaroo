@@ -9,8 +9,8 @@ class FakeServer extends EventEmitter {
         this._onConnect = onConnect;
     }
 
-    listen(port, hostname, onReady) {
-        onReady();
+    listen(port, hostname) {
+        this.emit("listening");
         this.fakeSocket();
     }
 
@@ -28,7 +28,6 @@ const workerServerFactory = (onAsk = jest.fn(), onData = jest.fn()) => {
     const workerServer = new WorkerServer({
         hostname: "test",
         port: 3333,
-        getMappers: () => ["testStage"],
         onAsk, onData,
         inject: {
             _net: {

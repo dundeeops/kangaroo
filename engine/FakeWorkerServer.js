@@ -9,8 +9,8 @@ class FakeServer extends EventEmitter {
         this._onConnect = onConnect;
     }
 
-    listen(port, hostname, onReady) {
-        onReady();
+    listen(port, hostname) {
+        this.emit("listening");
         this.fakeSocket();
     }
 
@@ -29,7 +29,6 @@ module.exports = class FakeWorkerServer extends WorkerServer  {
         super({
             hostname: "test",
             port: 3333,
-            getMappers: () => ["testStage"],
             inject: {
                 _net: {
                     createServer: (onConnect) => new FakeServer(onConnect),
