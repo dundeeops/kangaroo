@@ -27,7 +27,6 @@ module.exports = class TimeoutErrorTimer {
         this._onError = options && options.onError;
 
         this.initInjections(options);
-
         this.init(options);
     }
 

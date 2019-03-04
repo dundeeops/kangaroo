@@ -1,5 +1,4 @@
 module.exports = {
-
     async startUnlessTimeout(callback, timeout, _setTimeout = setTimeout) {
         const func = async () => {
             const result = await callback();

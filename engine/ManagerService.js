@@ -29,15 +29,25 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
     runStream(stage, key, stream, _getId = getId, _getHash = getHash, _es = es) {
         const session = _getId();
         const group = _getHash(session, stage);
-
         return stream
             .pipe(_es.split())
             .pipe(_es.map(async (data, callback) => {
-                await this.send(session, group, stage, key, data);
-                callback(null, null);
+                await this.send(
+                    session,
+                    group,
+                    stage,
+                    key,
+                    data,
+                );
+                callback();
             }))
             .on("end", () => {
-                this._connectionService.notify(Dict.NULL_ACHIEVED, { group });
+                this._connectionService.notify(
+                    Dict.NULL_ACHIEVED,
+                    {
+                        group,
+                    },
+                );
             });
     }
 }

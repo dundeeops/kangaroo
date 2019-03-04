@@ -1,19 +1,21 @@
 const net = require("net");
+const EventEmitter = require("events");
 const es = require("event-stream");
 const {
     getServerName,
-    serializeData,
+    makeMessage,
 } = require("./SerializationUtil.js");
 const {
     getPromise,
 } = require("./PromiseUtil.js");
 const RestartService = require("./RestartService.js");
 const AskDict = require("./AskDict.js");
-const BaseDict = require("./BaseDict.js");
 
-const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
+const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
 const defaultOptions = {
+    onError: () => {},
+    onErrorTimeout: () => {},
     inject: {
         _net: net,
         _es: es,
@@ -21,8 +23,9 @@ const defaultOptions = {
     },
 };
 
-module.exports = class WorkerServer {
+module.exports = class WorkerServer extends EventEmitter {
     constructor(_options = {}) {
+        super();
         const options = {
             ...defaultOptions,
             ..._options,
@@ -35,11 +38,11 @@ module.exports = class WorkerServer {
         this._port = options.port;
         this._onAsk = options.onAsk;
         this._onData = options.onData;
+        this._onError = options.onError;
+        this._onErrorTimeout = options.onErrorTimeout;
 
         this.initInjections(options);
-
         this.init(options);
-
         this.initPromise();
         this.initService(options);
     }
@@ -62,18 +65,17 @@ module.exports = class WorkerServer {
         this._service = new this._RestartService({
             onError: this.onError.bind(this),
             onErrorTimeout: (error) => {
-                throw error;
+                this._onErrorTimeout(error);
             },
             run: this.run.bind(this),
             isAlive: () => !!this._server,
-            timeoutErrorMessage: DEFAULT_TIMEOUT_ERROR_MESSAGE,
+            timeoutErrorMessage: TIMEOUT_ERROR_MESSAGE,
             ...options.restart,
         });
     }
 
-    // TODO: Log error & event
     onError(error) {
-        console.error(`Worker failed ${this.getName()}`, error.message, error.stack);
+        this._onError(error);
     }
 
     getName(_getServerName = getServerName) {
@@ -94,42 +96,48 @@ module.exports = class WorkerServer {
         return server;
     }
 
-    run(callback, _serializeData = serializeData) {
-        let server;
-        server = this.makeServer(
-            (socket) => {
-                socket.write(_serializeData({
-                    type: AskDict.INFO,
-                }) + BaseDict.ENDING);
+    sendInfo(socket, _makeMessage = makeMessage) {
+        socket.write(
+            _makeMessage({
+                type: AskDict.INFO,
+            }),
+        );
+    }
 
-                socket 
-                    .pipe(this._es.split())
-                    .pipe(this._es.parse())
-                    .pipe(this._es.map(async (obj, cb) => {
-                        const { id, type, data } = obj;
-                        if (type) {
-                            await this._onAsk(socket, id, type, data);
-                        } else {
-                            await this._onData(socket, obj);
-                        }
-                        cb();
-                    }));
+    onSocket(socket) {
+        socket 
+            .pipe(this._es.split())
+            .pipe(this._es.parse())
+            .pipe(this._es.map(async (obj, cb) => {
+                const { id, type, data } = obj;
+                if (type) {
+                    await this._onAsk(socket, id, type, data);
+                } else {
+                    await this._onData(socket, obj);
+                }
+                cb();
+            }));
+    }
+
+    run(callback) {
+        const server = this.makeServer(
+            (socket) => {
+                this.sendInfo(socket);
+                this.onSocket(socket);
+                this.emit("socket", socket, this);
             },
             () => {
-                // TODO: Remove and replace with event
-                console.log(`Worker started with ${this.getName()}`);
                 this._server = server;
                 callback();
                 this._resolve();
+                this.emit("connect", this);
             },
             () => {
-                // TODO: Remove and replace with event
-                console.log(`Worker stopped with ${this.getName()}`);
                 this._server = null;
                 callback();
+                this.emit("close", this);
             },
         );
-
         return server;
     }
 }

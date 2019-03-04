@@ -1,9 +1,8 @@
 const {
-    serializeData,
+    makeMessage,
     getHash,
 } = require("./SerializationUtil.js");
 const AskDict = require("./AskDict.js");
-const BaseDict = require("./BaseDict.js");
 
 const NO_CONNECTIONS_ERROR = "There are no alive servers";
 
@@ -25,15 +24,32 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     async send(session, group, stage, key, data) {
-        const serverName = await this.getSessionStageKeyConnection(session, stage, key);
-        await this.sendToServer(serverName, session, group, stage, key, data);
+        const serverName = await this.getSessionStageKeyConnection(
+            session,
+            stage,
+            key,
+        );
+        await this.sendToServer(
+            serverName,
+            session,
+            group,
+            stage,
+            key,
+            data,
+        );
         return serverName;
     }
 
-    async sendToServer(serverName, session, group, stage, key, data, _serializeData = serializeData) {
+    async sendToServer(serverName, session, group, stage, key, data, _makeMessage = makeMessage) {
         const connection = this._connectionService.getConnection(serverName);
-        const raw = _serializeData({ session, group, stage, key, data });
-        return connection.sendData(raw + BaseDict.ENDING);
+        const message = _makeMessage({
+            session,
+            group,
+            stage,
+            key,
+            data,
+        });
+        return connection.push(message);
     }
 
     getSessionStageKeyServer(session, stage, key, _getHash = getHash) {
@@ -47,9 +63,15 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     async askSessionStageKeyServer(session, stage, key) {
-        return await this._connectionService.ask(AskDict.GET_SESSION_STAGE_KEY_SERVER, {
-            session, stage, key,
-        });
+        return await this._connectionService
+            .ask(
+                AskDict.GET_SESSION_STAGE_KEY_SERVER,
+                {
+                    session,
+                    stage,
+                    key,
+                },
+            );
     }
 
     async getSessionStageKeyConnection(session, stage, key) {

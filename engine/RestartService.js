@@ -40,7 +40,6 @@ module.exports = class RestartService {
         this._onErrorTimeout = options.onErrorTimeout;
 
         this.initInjections(options);
-
         this.init(options);
         this.initDomain();
         this.initTimeoutErrorTimer(options);
@@ -109,11 +108,11 @@ module.exports = class RestartService {
     }
 
     checkIsAlive() {
-        if (!this._isAlive()) {
-            this.startRestart();
-        } else {
+        if (this._isAlive()) {
             this.stopRestart();
             this._timeoutError.stop();
+        } else {
+            this.startRestart();
         }
     }
 
@@ -130,7 +129,6 @@ module.exports = class RestartService {
     run() {
         this._domain.run(() => {
             this._isStarting = true;
-
             this._run(() => {
                 this._isStarting = false;
                 this.checkIsAlive();

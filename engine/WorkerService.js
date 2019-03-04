@@ -17,7 +17,9 @@ const AskDict = require("./AskDict.js");
 const BaseDict = require("./BaseDict.js");
 
 const defaultOptions = {
-    staticPath: path.resolve("./upload"),
+    hostname: "localhost",
+    port: 2325,
+    modulesPath: path.resolve("./upload"),
     inject: {
         _startUnlessTimeout: startUnlessTimeout,
         _WorkerServer: WorkerServer,
@@ -27,7 +29,6 @@ const defaultOptions = {
 // TODO: Make error processing
 // TODO: Make accumulator
 module.exports = class WorkerService extends OrchestratorServicePrototype {
-
     constructor(_options = {}) {
         const options = {
             ...defaultOptions,
@@ -38,10 +39,9 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             },
         };
         super(options);
-        this._staticPath = options.staticPath;
+        this._modulesPath = options.modulesPath;
 
         this.initInjections(options);
-
         this.initWorker(options);
         this.initServer(options);
         this.initOnAskMap();
@@ -72,7 +72,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             [AskDict.GET_SESSION_STAGE_KEY_SERVER]: this.onAskGetSessionStageKeyServer.bind(this),
             [AskDict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
             [AskDict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
-            [AskDict.NULL_ACHIEVED]: this.onAskNullAchived.bind(this),
+            [AskDict.NULL_ACHIEVED]: this.onAskNullAchieved.bind(this),
             [AskDict.UPLOAD]: this.onUpload.bind(this),
             [AskDict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
         };
@@ -162,7 +162,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         obj.count++;
 
         if (info) {
-            const dir = path.resolve(this._staticPath, id);
+            const dir = path.resolve(this._modulesPath, id);
             await this.deleteFolderRecursive(dir);
             await this.checkPathExist(dir);
 
@@ -205,7 +205,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
     }
 
-    async onAskNullAchived(socket, id, type, data) {
+    async onAskNullAchieved(socket, id, type, data) {
         await this._startUnlessTimeout(async () => {
             if (this._processingMap.get(data.group)) {
                 const isReady = !this._processingMap.get(data.group).processes
@@ -243,7 +243,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     async checkStaticPathExist() {
-        await this.checkPathExist(this._staticPath);
+        await this.checkPathExist(this._modulesPath);
     }
 
     async checkPathExist(dir) {
