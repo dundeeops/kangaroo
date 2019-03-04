@@ -1,9 +1,9 @@
 const EventEmitter = require("events");
 const {
     serializeData,
-} = require("./SerializationUtil.js");
-const AskDict = require("./AskDict.js");
-const BaseDict = require("./BaseDict.js");
+} = require("../engine/SerializationUtil.js");
+const AskDict = require("../engine/AskDict.js");
+const BaseDict = require("../engine/BaseDict.js");
 
 const sendSocketInfo = (socket, mappers = ["testStage"]) => socket.emit(
     "data",

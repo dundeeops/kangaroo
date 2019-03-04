@@ -1,9 +1,9 @@
-const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
-const FakeTimeout = require("./FakeTimeout.js");
-const ConnectionService = require("./ConnectionService.js");
+const ConnectionService = require("../engine/ConnectionService.js");
 const {
     startUnlessTimeout,
-} = require("./PromiseUtil.js");
+} = require("../engine/PromiseUtil.js");
+const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
+const FakeTimeout = require("./FakeTimeout.js");
 const FakeAutoConnectionSocket = require("./FakeAutoConnectionSocket.js");
 
 const connectionServiceFactory = (options) => {

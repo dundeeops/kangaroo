@@ -20,7 +20,7 @@ module.exports = {
         return [promise, resolve, reject];
     },
 
-    promisify(obj, keys) {
+    makeAsyncVersion(obj, keys) {
         keys.forEach((key) => {
             const fn = obj[key];
             function wrap(...args) {

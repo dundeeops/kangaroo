@@ -1,8 +1,8 @@
 const {
     parseData,
-} = require("./SerializationUtil.js");
+} = require("../engine/SerializationUtil.js");
+const OrchestratorServicePrototype = require("../engine/OrchestratorServicePrototype.js");
 const FakeConnectionService = require("./FakeConnectionService.js");
-const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
 
 const servicePrototypeFactory = async () => {
     const connectionService = new FakeConnectionService();

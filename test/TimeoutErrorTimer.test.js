@@ -1,5 +1,5 @@
+const TimeoutErrorTimer = require("../engine/TimeoutErrorTimer.js");
 const FakeTimeout = require("./FakeTimeout.js");
-const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 describe("TimeoutErrorTimer", () => {
 

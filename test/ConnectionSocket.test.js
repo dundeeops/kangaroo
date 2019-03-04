@@ -1,8 +1,8 @@
-const BaseDict = require("./BaseDict.js");
+const BaseDict = require("../engine/BaseDict.js");
 const {
     serializeData,
     parseData,
-} = require("./SerializationUtil.js");
+} = require("../engine/SerializationUtil.js");
 const {
     connectionSocketFactory,
     waitSocket,

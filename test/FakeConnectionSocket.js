@@ -1,15 +1,15 @@
-const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
-const FakeRestartService = require("./FakeRestartService.js");
-const BaseDict = require("./BaseDict.js");
-const ConnectionSocket = require("./ConnectionSocket.js");
-const FakeSocket = require("./FakeSocket.js");
+const BaseDict = require("../engine/BaseDict.js");
+const ConnectionSocket = require("../engine/ConnectionSocket.js");
 const {
     serializeData,
-} = require("./SerializationUtil.js");
+} = require("../engine/SerializationUtil.js");
 const {
     startUnlessTimeout,
-} = require("./PromiseUtil.js");
-const AskDict = require("./AskDict.js");
+} = require("../engine/PromiseUtil.js");
+const AskDict = require("../engine/AskDict.js");
+const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
+const FakeRestartService = require("./FakeRestartService.js");
+const FakeSocket = require("./FakeSocket.js");
 
 const sendSocketInfo = (
     socket,

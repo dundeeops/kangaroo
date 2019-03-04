@@ -1,4 +1,4 @@
-const WorkerService = require("./WorkerService.js");
+const WorkerService = require("../engine/WorkerService.js");
 const FakeWorkerServer = require("./FakeWorkerServer.js");
 
 const workerServiceFactory = () => {

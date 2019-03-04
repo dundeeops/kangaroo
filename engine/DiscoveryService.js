@@ -1,10 +1,10 @@
 const Etcd = require("node-etcd");
 const {
-    promisify,
+    makeAsyncVersion,
 } = require("./PromiseUtil.js");
 
 // TODO: Separate from Etcd.prototype
-promisify(Etcd.prototype, ["set", "get", "del", "rmdir"]);
+makeAsyncVersion(Etcd.prototype, ["set", "get", "del", "rmdir"]);
 
 const DIR = "/noremap";
 const SERVERS_KEY = "servers";

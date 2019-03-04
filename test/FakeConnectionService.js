@@ -1,6 +1,6 @@
+const ConnectionService = require("../engine/ConnectionService.js");
 const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
 const FakeTimeout = require("./FakeTimeout.js");
-const ConnectionService = require("./ConnectionService.js");
 const FakeAutoConnectionSocket = require("./FakeAutoConnectionSocket.js");
 
 module.exports = class FakeConnectionService extends ConnectionService {

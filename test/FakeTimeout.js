@@ -1,6 +1,6 @@
 const {
     getId,
-} = require("./SerializationUtil");
+} = require("../engine/SerializationUtil");
 
 const setTimeoutFactory = (cb) => (fn, timeout) => {
     const id = getId();

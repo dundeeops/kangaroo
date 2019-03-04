@@ -1,5 +1,5 @@
 const EventEmitter = require("events");
-const WorkerServer = require("./WorkerServer.js");
+const WorkerServer = require("../engine/WorkerServer.js");
 const FakeSocket = require("./FakeSocket.js");
 const FakeRestartService = require("./FakeRestartService.js");
 

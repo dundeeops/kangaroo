@@ -1,5 +1,5 @@
+const RestartService = require("../engine/RestartService.js");
 const FakeTimeout = require("./FakeTimeout.js");
-const RestartService = require("./RestartService.js");
 const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
 
 module.exports = class FakeRestartService extends RestartService {

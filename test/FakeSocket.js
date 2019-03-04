@@ -1,4 +1,3 @@
-const EventEmitter = require("events");
 const {Readable} = require("stream");
 
 module.exports = class FakeSocket extends Readable {

@@ -141,16 +141,20 @@ module.exports = class ConnectionSocket {
         );
     }
 
-    getUploadModuleStream(data, _getId = getId) {
-        const connection = this;
-        const id = _getId();
-        const type = AskDict.UPLOAD;
+    getInfoFactory(data) {
         let isInit = false;
-        const getInfo = () => {
+        return () => {
             const info = isInit ? null : data;
             isInit = true;
             return info;
         };
+    }
+
+    getUploadModuleStream(data, _getId = getId) {
+        const connection = this;
+        const id = _getId();
+        const type = AskDict.UPLOAD;
+        const getInfo = this.getInfoFactory(data);
         const stream = new Writable({
             async write(bytes, encoding, callback) {
                 const info = getInfo();
