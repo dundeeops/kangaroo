@@ -18,20 +18,15 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
         super(options);
     }
 
-    uploadModuleStream(readStream, info) {
-        this._connectionService
-            .getConnections()
-            .forEach((connection) => {
-                readStream.pipe(connection.getUploadFileStream(info));
-            });
-        return readStream;
+    uploadModuleStream(readStream, data) {
+        return this._connectionService.uploadModuleStream(readStream, data);
     }
 
     async getStaticModulesStatus(id) {
-        return await this.askAll(Dict.STATIC_MODULES_STATUS, { id });
+        return await this._connectionService.askAll(Dict.STATIC_MODULES_STATUS, { id });
     }
 
-    runStream(stage, stream, key, _getId = getId, _getHash = getHash, _es = es) {
+    runStream(stage, key, stream, _getId = getId, _getHash = getHash, _es = es) {
         const session = _getId();
         const group = _getHash(session, stage);
 
@@ -42,7 +37,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                 callback(null, null);
             }))
             .on("end", () => {
-                this.notify(Dict.NULL_ACHIVED, { group });
+                this._connectionService.notify(Dict.NULL_ACHIVED, { group });
             });
     }
 }

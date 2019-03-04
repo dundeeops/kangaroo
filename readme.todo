@@ -21,12 +21,13 @@ Milestone:
             ✘ Allow to use deployable non JS apps @cancelled(19-03-04 10:39)
 
     Examples:
-        ✔ Make a simple static example @done(19-02-23 19:15)
-        ☐ Make a dynamic clusterization example
+        ✔ Make a static example @done(19-02-23 19:15)
+        ✔ Make a dynamic example @done(19-03-04 11:34)
         ☐ Make a logging example
         ☐ Make a etcd example
         ☐ Make a docker example
         ☐ Make an accumulation example
+        ☐ Clean code
 
     Refactoring:
         ☐ Clean code & fix tests @started(19-03-04 10:45)

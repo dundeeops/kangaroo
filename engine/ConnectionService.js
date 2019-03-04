@@ -4,6 +4,7 @@ const {
 } = require("./SerializationUtil.js");
 const {
     getPromise,
+    raceData,
 } = require("./PromiseUtil");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
@@ -14,6 +15,9 @@ const defaultOptions = {
     connections: [],
     poolingConnections: [],
     poolingTimeout: POOLING_TIMEOUT,
+    onConnect: () => {},
+    onConnectError: () => {},
+    onConnectTimeoutError: () => {},
     inject: {
         _setInterval: setInterval,
         _clearInterval: clearInterval,
@@ -33,6 +37,9 @@ module.exports = class ConnectionService {
             },
         };
         this._poolingTimeout = options.poolingTimeout;
+        this._onConnect = options.onConnect;
+        this._onConnectError = options.onConnectError;
+        this._onConnectTimeoutError = options.onConnectTimeoutError;
 
         this.initInjections(options);
 
@@ -97,21 +104,22 @@ module.exports = class ConnectionService {
             const connection = new this._ConnectionSocket({
                 hostname, port,
 
-                // TODO: Store connection info
                 onReceiveInfo: (info) => {
                     resolve(connection);
+                    this._onConnect(connection, info);
                 },
 
-                // TODO: Log connection error
                 onError: (error) => {
                     resolve();
+                    this._onConnectError(error, connection);
                 },
 
                 restart: {
                     restart: false,
-                    onErrorTimeout: () => {
+                    onErrorTimeout: (error) => {
                         resolve();
                         connection.destroy();
+                        this._onConnectTimeoutError(error, connection);
                     },
                 },
             });
@@ -137,6 +145,7 @@ module.exports = class ConnectionService {
                 this.removeConnection(connection);
                 this.addPoolConnection(hostname, port);
                 connection.destroy();
+                this._onConnectTimeoutError(error, connection);
             });
 
             this.removePoolConnection(hostname, port);
@@ -173,18 +182,20 @@ module.exports = class ConnectionService {
         const connection = new this._ConnectionSocket({
             hostname, port,
 
-            // TODO: Store connection info
             onReceiveInfo: (info) => {
                 resolve();
+                this._onConnect(connection, info);
             },
 
-            // TODO: Log connection error
-            onError: (error) => {},
+            onError: (error) => {
+                this._onConnectError(error, connection);
+            },
 
             restart: {
                 onErrorTimeout: () => {
                     resolve();
                     connection.destroy();
+                    this._onConnectTimeoutError(error, connection);
                 },
             },
         });
@@ -227,5 +238,53 @@ module.exports = class ConnectionService {
 
     getConnection(name) {
         return this._connectionsMap.get(name);
+    }
+
+    uploadModuleStream(readStream, data) {
+        this.reduceConnections(
+            (connection) => readStream.pipe(connection.getUploadModuleStream(data)),
+        );
+        return readStream;
+    }
+
+    reduceConnections(callback) {
+        const array = [];
+        this._connectionsMap
+            .forEach((connection) => {
+                array.push(callback(connection));
+            });
+        return array;
+    }
+
+    async notify(type, data) {
+        const promises = this.reduceConnections(
+            (connection) => connection.notify(type, data),
+        );
+        await Promise.all(promises);
+    }
+
+    async findConnection(type, data, _raceData = raceData) {
+        const promises = this.reduceConnections(
+            (connection) => connection.findConnection(type, data),
+        );
+        return await _raceData(promises);
+    }
+
+    askPromises(type, data) {
+        const promises = this.reduceConnections(
+            (connection) => connection.ask(type, data),
+        );
+        return promises;
+    }
+
+    async ask(type, data, _raceData = raceData) {
+        const promises = this.askPromises(type, data);
+        return await _raceData(promises);
+    }
+
+    async askAll(type, data) {
+        const promises = this.askPromises(type, data);
+        const result = await Promise.all(promises);
+        return result.filter((r) => !!r);
     }
 }

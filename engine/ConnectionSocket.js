@@ -132,7 +132,7 @@ module.exports = class ConnectionSocket {
         }) + BaseDict.ENDING);
     }
 
-    getUploadFileStream(_info, _getId = getId) {
+    getUploadModuleStream(_info, _getId = getId) {
         const connection = this;
         const id = _getId().replace("/", "_").replace("\\", "_");
         const type = AskDict.UPLOAD;

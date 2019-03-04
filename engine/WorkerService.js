@@ -209,7 +209,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         await this._startUnlessTimeout(async () => {
             if (this._processingMap.get(data.group)) {
                 const isReady = !this._processingMap.get(data.group).processes
-                    && !await this.ask(AskDict.IS_PROCESSING, { group: data.group });
+                    && !await this._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group });
 
                 if (isReady) {
                     this.forEachStorageMaps(data.group, (map) => {
@@ -217,7 +217,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     });
 
                     this.forEachUsedGroups(data.group, (nextGroup) => {
-                        this.notify(AskDict.NULL_ACHIVED, {
+                        this._connectionService.notify(AskDict.NULL_ACHIVED, {
                             group: nextGroup,
                         });
                     });

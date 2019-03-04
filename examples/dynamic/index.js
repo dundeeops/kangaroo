@@ -1,4 +1,5 @@
 const argv = require("yargs").argv;
+const tar = require("tar");
 
 // Engine
 
@@ -54,29 +55,9 @@ const manager = new ManagerService({
     connectionService,
 });
 
-// Mapping
+// Static Mapping
 
-worker.setMapper("init", (key, send) => {
-    let state = false;
-    return async ({ data }) => {
-        state = !state;
-        await send("reduce_2_flows", state ? "final" : "final_alt", data);
-    };
-});
-
-worker.setMapper("reduce_2_flows", (key, send) => {
-    return async ({ data }) => {
-        await send("map", null, data);
-    };
-});
-
-worker.setMapper("map", (key, send) => {
-    return async ({ data }) => {
-        await send("final_reduce", "final", data);
-    };
-});
-
-worker.setMapper("final_reduce", (key) => {
+worker.setMapper("static", (key) => {
     let sum = "";
     return [
         async ({ data }) => {
@@ -98,16 +79,39 @@ async function run() {
     await worker.start();
     await connectionService.start();
 
-    const timeout = new TimeoutErrorTimer();
-    timeout.start("TIMEOUT: Error sending an initial stream");
-
-    manager.runStream(
-        "init",
-        null,
-        fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" }),
-    ).on("end", () => {
-        console.log("The data has been sent! Processing...");
-        timeout.stop();
+    process.stdin.on("keypress", (str, key) => {
+        if (key.name === "l") {
+            const timeout = new TimeoutErrorTimer();
+            timeout.start("TIMEOUT: Error uploading");
+            manager.uploadModuleStream(
+                tar.c({
+                    gzip: true,
+                }, ["./entry.js", "./package.json"]),
+                {
+                    id: "test",
+                    mappers: {
+                        "entry.js": ["test"],
+                    },
+                },
+            ).on("end", async () => {
+                console.log("The uploading completed! Unzipping...");
+                timeout.stop();
+            });
+        } else if (key.name === "o") {
+            const statuses = await manager.getStaticModulesStatus("test");
+            console.log(statuses);
+        } else if (key.name === "k") {
+            const timeout = new TimeoutErrorTimer();
+            timeout.start("TIMEOUT: Error sending an initial stream");
+            manager.runStream(
+                "test",
+                "hello",
+                fs.createReadStream(path.resolve("./data.txt"), { encoding: "utf8" })
+            ).on("end", () => {
+                console.log("The data has been sent! Processing...");
+                timeout.stop();
+            });
+        }
     });
 }
 

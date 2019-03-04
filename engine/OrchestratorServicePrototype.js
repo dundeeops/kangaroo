@@ -2,9 +2,6 @@ const {
     serializeData,
     getHash,
 } = require("./SerializationUtil.js");
-const {
-    raceData,
-} = require("./PromiseUtil");
 const AskDict = require("./AskDict.js");
 const BaseDict = require("./BaseDict.js");
 
@@ -12,7 +9,6 @@ const NO_CONNECTIONS_ERROR = "There are no alive servers";
 
 const defaultOptions = {};
 
-// TODO: Make connection chooser (prefer by a ping and with minimum CPU loadout) & Add a custom picking function
 module.exports = class OrchestratorServicePrototype {
     constructor(_options = {}) {
         const options = {
@@ -51,7 +47,7 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     async askSessionStageKeyServer(session, stage, key) {
-        return await this.ask(AskDict.GET_SESSION_STAGE_KEY_SERVER, {
+        return await this._connectionService.ask(AskDict.GET_SESSION_STAGE_KEY_SERVER, {
             session, stage, key,
         });
     }
@@ -79,53 +75,8 @@ module.exports = class OrchestratorServicePrototype {
         return serverName;
     }
 
-    // TODO: Move into ConnectionService
-    async notify(type, data) {
-        const promises = [];
-        this._connectionService
-            .getConnections()
-            .forEach((connection) => {
-                promises.push(connection.notify(type, data));
-            });
-        await Promise.all(promises);
-    }
-
-    // TODO: Move into ConnectionService
-    async ask(type, data, _raceData = raceData) {
-        const promises = [];
-        this._connectionService
-            .getConnections()
-            .forEach((connection) => {
-                promises.push(connection.ask(type, data));
-            });
-        return await _raceData(promises);
-    }
-
-    // TODO: Move into ConnectionService
-    async findConnection(type, data, _raceData = raceData) {
-        const promises = [];
-        this._connectionService
-            .getConnections()
-            .forEach((connection) => {
-                promises.push(connection.findConnection(type, data));
-            });
-        return await _raceData(promises);
-    }
-
-    // TODO: Move into ConnectionService
-    async askAll(type, data) {
-        const promises = [];
-        this._connectionService
-            .getConnections()
-            .forEach((connection) => {
-                promises.push(connection.ask(type, data));
-            });
-        const result = await Promise.all(promises);
-        return result.filter((r) => !!r);
-    }
-
     async findStageConnection(stage) {
-        const connection = await this.findConnection(AskDict.CAN_GET_STAGE, {
+        const connection = await this._connectionService.findConnection(AskDict.CAN_GET_STAGE, {
             stage,
         });
 
