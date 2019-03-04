@@ -106,7 +106,7 @@ module.exports = class ConnectionService {
                 restart: false,
                 onErrorTimeout: (error) => {
                     callback();
-                    connection.destroy();
+                    connection.close();
                     this._onConnectTimeoutError(error, connection);
                 },
             },
@@ -125,6 +125,18 @@ module.exports = class ConnectionService {
         const connectionsRaw = await Promise.all(promises);
         return connectionsRaw.filter((connection) => !!connection);
     }
+    
+    setConnectionHandlers(connection) {
+        const hostname = connection.getHostname();
+        const port = connection.getPort();
+        connection.setRestart(true);
+        connection.setOnErrorTimeout((error) => {
+            this.removeConnection(connection);
+            this.addPoolConnection(hostname, port);
+            connection.close();
+            this._onConnectTimeoutError(error, connection);
+        });
+    }
 
     async stickOutPoolConnections() {
         const connections = await this.connectPoolingConnections();
@@ -132,13 +144,7 @@ module.exports = class ConnectionService {
             const name = connection.getName();
             const hostname = connection.getHostname();
             const port = connection.getPort();
-            connection.setRestart(true);
-            connection.setOnErrorTimeout(() => {
-                this.removeConnection(connection);
-                this.addPoolConnection(hostname, port);
-                connection.destroy();
-                this._onConnectTimeoutError(error, connection);
-            });
+            this.setConnectionHandlers(connection);
             this.removePoolConnection(hostname, port);
             this._connectionsMap.set(name, connection);
         });
@@ -168,12 +174,7 @@ module.exports = class ConnectionService {
             this._resolversMap.delete(name);
         });
         const connection = this.connectionFactory(hostname, port, resolve);
-        connection.setOnErrorTimeout(() => {
-            this.removeConnection(connection);
-            this.addPoolConnection(hostname, port);
-            connection.destroy();
-            this._onConnectTimeoutError(error, connection);
-        });
+        this.setConnectionHandlers(connection);
         this._connectionsMap.set(name, connection);
         return [connection, promise];
     }

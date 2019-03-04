@@ -17,7 +17,7 @@ module.exports = class FakeSocket extends Readable {
 
     _read() {}
 
-    destroy() {
-        this.emit("destroy", true);
+    close() {
+        this.emit("close", true);
     }
 };

@@ -1,8 +1,9 @@
 const net = require("net");
 const { Writable } = require("stream");
+const es = require("event-stream");
 const {
     getServerName,
-    serializeData,
+    makeMessage,
     parseData,
     getId,
 } = require("./SerializationUtil.js");
@@ -12,7 +13,6 @@ const {
 const RestartService = require("./RestartService.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 const AskDict = require("./AskDict.js");
-const BaseDict = require("./BaseDict.js");
 
 const DEFAULT_ASK_TIMEOUT = 1000;
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error connecting with a server $0:$1";
@@ -100,24 +100,32 @@ module.exports = class ConnectionSocket {
         this._promiseAskMap.delete(hash);
     }
 
-    async ask(type, data, onError = () => {}, _getId = getId) {
-        const hash = _getId();
-        const ask = this.addAskPromise(hash);
-        const timeoutError = new this._TimeoutErrorTimer({
+    timeoutErrorFactory(onError) {
+        return new this._TimeoutErrorTimer({
             timeout: this._askTimeout,
-            onError: () => {
-                ask.resolve();
-                onError();
+            onError: (error) => {
+                onError(error);
             },
         });
+    }
+
+    async ask(type, data, onError = () => {}, _getId = getId) {
+        const hash = _getId();
+        const { promise, resolve } = this.addAskPromise(hash);
+        const timeoutError = this.timeoutErrorFactory((error) => {
+            resolve();
+            onError(error);
+        });
         timeoutError.start();
-        this.push(serializeData({
-            id: hash, type, data,
-        }) + BaseDict.ENDING);
-        const result = await ask.promise;
+        this.push(
+            makeMessage({
+                id: hash, type, data,
+            }),
+        );
+        const answer = await promise;
         timeoutError.stop();
         this.deleteAskPromise(hash);
-        return result;
+        return answer;
     }
 
     async findConnection(type, data) {
@@ -126,27 +134,42 @@ module.exports = class ConnectionSocket {
     }
 
     async notify(type, data) {
-        this.push(serializeData({
-            type, data,
-        }) + BaseDict.ENDING);
+        this.push(
+            makeMessage({
+                type, data,
+            }),
+        );
     }
 
-    getUploadModuleStream(_info, _getId = getId) {
+    getUploadModuleStream(data, _getId = getId) {
         const connection = this;
-        const id = _getId().replace("/", "_").replace("\\", "_");
+        const id = _getId();
         const type = AskDict.UPLOAD;
         let isInit = false;
+        const getInfo = () => {
+            const info = isInit ? null : data;
+            isInit = true;
+            return info;
+        };
         const stream = new Writable({
-            async read() {},
             async write(bytes, encoding, callback) {
-                const info = isInit ? null : _info;
-                isInit = true;
-                await connection.notify(type, { id, info, bytes });
-                callback(null, bytes);
+                const info = getInfo();
+                await connection.notify(
+                    type,
+                    {
+                        id, info, bytes,
+                    },
+                );
+                callback();
             },
             async final(callback) {
-                await connection.notify(type, { id, info: null, bytes: null });
-                callback(null);
+                await connection.notify(
+                    type,
+                    {
+                        id,
+                    },
+                );
+                callback();
             }
         });
         return stream;
@@ -184,27 +207,31 @@ module.exports = class ConnectionSocket {
         this._service.start();
     }
 
+    onReceiveInfo(socket, data, callback) {
+        this._socket = socket;
+        callback();
+        this._onReceiveInfo(data);
+        this.releaseAccumulator();
+    }
+    
+    onData(socket, data, callback) {
+        if (data.type === AskDict.INFO) {
+            this.onReceiveInfo(socket, data, callback);
+        } else {
+            this.onAnswer(data);
+        }
+    }
+
     run(callback, _parseData = parseData) {
         const socket = new this._net.Socket();
 
-        // TODO: ES
-        socket.on("data", (raw) => {
-            raw.toString().split(BaseDict.ENDING).map((str) => {
-                if (str) {
-                    const data = _parseData(str);
-                    if (data.type === AskDict.INFO) {
-                        // TODO: Move outside
-                        this._socket = socket;
-                        callback();
-        
-                        this._onReceiveInfo();
-                        this.releaseAccumulator();
-                    } else if (data.type) {
-                        this.onAnswer(data);
-                    }
-                }
-            });
-        });
+        socket
+            .pipe(es.split())
+            .pipe(es.parse())
+            .pipe(es.map((data, cb) => {
+                this.onData(socket, data, callback);
+                cb(null, null);
+            }));
 
         socket.on("close", () => {
             this._socket = null;
@@ -228,7 +255,7 @@ module.exports = class ConnectionSocket {
         return socket;
     }
 
-    destroy() {
+    close() {
         if (this._socket) {
             this._socket.destroy();
             this._socket = null;
@@ -236,29 +263,25 @@ module.exports = class ConnectionSocket {
     }
 
     releaseAccumulator() {
-        while (this._accumulatedData.length > 0 && !!this._socket) {
-            if (this._socket.write(this._accumulatedData[0])) {
+        while (
+            this._accumulatedData.length > 0
+            && this.isAlive()
+        ) {
+            const message = this._accumulatedData[0];
+            if (this._socket.write(message)) {
                 this._accumulatedData.shift();
             }
         }
-    }
-
-    pushAccumulator(data) {
-        this._accumulatedData.push(data);
-        return true;
     }
 
     push(data) {
         this._service.start();
 
         if (!this._socket || this._accumulatedData.length > 0) {
-            return this.pushAccumulator(data);
+            this._accumulatedData.push(data);
+            return true;
         } else {
             return this._socket.write(data);
         }
-    }
-
-    sendData(data) {
-        return this.push(data);
     }
 }

@@ -76,7 +76,7 @@ describe("ConnectionSocket", () => {
             connectionSocket.connect();
             waitSocket(connectionSocket, () => socket, r);
         });
-        connectionSocket.destroy();
+        connectionSocket.close();
         expect(connectionSocket.isAlive()).toBe(false);
     });
 
@@ -94,7 +94,7 @@ describe("ConnectionSocket", () => {
             connectionSocket.run(() => {});
             waitSocket(connectionSocket, () => socket, r);
         });
-        connectionSocket.sendData(expectingData);
+        connectionSocket.push(expectingData);
         expect(data).toBe(expectingData);
     });
 
@@ -108,7 +108,7 @@ describe("ConnectionSocket", () => {
                 data = _data;
             });
         });
-        connectionSocket.sendData(expectingData);
+        connectionSocket.push(expectingData);
         await new Promise((r) => {
             waitSocket(connectionSocket, () => socket, r);
         });

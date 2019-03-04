@@ -79,7 +79,7 @@ async function run() {
     await worker.start();
     await connectionService.start();
 
-    process.stdin.on("keypress", (str, key) => {
+    process.stdin.on("keypress", async (str, key) => {
         if (key.name === "l") {
             const timeout = new TimeoutErrorTimer();
             timeout.start("TIMEOUT: Error uploading");

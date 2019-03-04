@@ -30,7 +30,7 @@ module.exports = class FakeAutoSocket extends EventEmitter {
         return true;
     }
 
-    destroy() {
-        this.emit("destroy", true);
+    close() {
+        this.emit("close", true);
     }
 };
