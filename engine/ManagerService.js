@@ -37,7 +37,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                 callback(null, null);
             }))
             .on("end", () => {
-                this._connectionService.notify(Dict.NULL_ACHIVED, { group });
+                this._connectionService.notify(Dict.NULL_ACHIEVED, { group });
             });
     }
 }

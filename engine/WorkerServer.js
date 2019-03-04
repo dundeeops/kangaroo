@@ -8,6 +8,8 @@ const {
     getPromise,
 } = require("./PromiseUtil.js");
 const RestartService = require("./RestartService.js");
+const AskDict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
@@ -97,8 +99,8 @@ module.exports = class WorkerServer {
         server = this.makeServer(
             (socket) => {
                 socket.write(_serializeData({
-                    type: "info",
-                }) + "\n");
+                    type: AskDict.INFO,
+                }) + BaseDict.ENDING);
 
                 socket 
                     .pipe(this._es.split())

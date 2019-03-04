@@ -1,7 +1,7 @@
 const BaseDict = require("./BaseDict.js");
 const {
     serializeData,
-    deserializeData,
+    parseData,
 } = require("./SerializationUtil.js");
 const {
     connectionSocketFactory,
@@ -120,7 +120,7 @@ describe("ConnectionSocket", () => {
         const connectionSocket = connectionSocketFactory((_socket) => {
             socket = _socket;
             socket.on("write", (_data) => {
-                const { id, type, data } = deserializeData(_data);
+                const { id, type, data } = parseData(_data);
                 socket.emit("data", serializeData({
                     id,
                     type,

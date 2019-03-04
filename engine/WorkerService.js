@@ -72,7 +72,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             [AskDict.GET_SESSION_STAGE_KEY_SERVER]: this.onAskGetSessionStageKeyServer.bind(this),
             [AskDict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
             [AskDict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
-            [AskDict.NULL_ACHIVED]: this.onAskNullAchived.bind(this),
+            [AskDict.NULL_ACHIEVED]: this.onAskNullAchived.bind(this),
             [AskDict.UPLOAD]: this.onUpload.bind(this),
             [AskDict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
         };
@@ -217,7 +217,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     });
 
                     this.forEachUsedGroups(data.group, (nextGroup) => {
-                        this._connectionService.notify(AskDict.NULL_ACHIVED, {
+                        this._connectionService.notify(AskDict.NULL_ACHIEVED, {
                             group: nextGroup,
                         });
                     });

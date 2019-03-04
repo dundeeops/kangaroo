@@ -42,7 +42,6 @@ module.exports = class ConnectionService {
         this._onConnectTimeoutError = options.onConnectTimeoutError;
 
         this.initInjections(options);
-
         this.init(options);
         this.initConnections(options);
     }
@@ -93,53 +92,46 @@ module.exports = class ConnectionService {
         }
     }
 
+    connectionFactory(hostname, port, callback) {
+        const connection = new this._ConnectionSocket({
+            hostname, port,
+            onReceiveInfo: (info) => {
+                callback(connection);
+                this._onConnect(connection, info);
+            },
+            onError: (error) => {
+                this._onConnectError(error, connection);
+            },
+            restart: {
+                restart: false,
+                onErrorTimeout: (error) => {
+                    callback();
+                    connection.destroy();
+                    this._onConnectTimeoutError(error, connection);
+                },
+            },
+        });
+        return connection;
+    }
+
     async connectPoolingConnections(_getPromise = getPromise) {
         const promises = [];
-
         this._poolingConnectionsMap.forEach(({ hostname, port }) => {
-
             const [promise, resolve] = _getPromise();
             promises.push(promise);
-
-            const connection = new this._ConnectionSocket({
-                hostname, port,
-
-                onReceiveInfo: (info) => {
-                    resolve(connection);
-                    this._onConnect(connection, info);
-                },
-
-                onError: (error) => {
-                    resolve();
-                    this._onConnectError(error, connection);
-                },
-
-                restart: {
-                    restart: false,
-                    onErrorTimeout: (error) => {
-                        resolve();
-                        connection.destroy();
-                        this._onConnectTimeoutError(error, connection);
-                    },
-                },
-            });
-
+            const connection = this.connectionFactory(hostname, port, resolve);
             connection.connect();
         });
-
         const connectionsRaw = await Promise.all(promises);
         return connectionsRaw.filter((connection) => !!connection);
     }
 
     async stickOutPoolConnections() {
-        
         const connections = await this.connectPoolingConnections();
-
         connections.forEach((connection) => {
             const name = connection.getName();
             const hostname = connection.getHostname();
             const port = connection.getPort();
-
             connection.setRestart(true);
             connection.setOnErrorTimeout(() => {
                 this.removeConnection(connection);
@@ -147,7 +139,6 @@ module.exports = class ConnectionService {
                 connection.destroy();
                 this._onConnectTimeoutError(error, connection);
             });
-
             this.removePoolConnection(hostname, port);
             this._connectionsMap.set(name, connection);
         });
@@ -165,43 +156,25 @@ module.exports = class ConnectionService {
 
     removeConnection(hostname, port, _getServerName = getServerName) {
         const name = _getServerName(hostname, port);
-
         this._resolversMap.delete(name);
         this._connectionsMap.delete(name);
     }
 
     addConnection(hostname, port, _getServerName = getServerName, _getPromise = getPromise) {
         const name = _getServerName(hostname, port);
-        
         const [promise, resolve] = _getPromise();
         this._resolversMap.set(name, { promise, resolve, });
         promise.then(() => {
             this._resolversMap.delete(name);
         });
-
-        const connection = new this._ConnectionSocket({
-            hostname, port,
-
-            onReceiveInfo: (info) => {
-                resolve();
-                this._onConnect(connection, info);
-            },
-
-            onError: (error) => {
-                this._onConnectError(error, connection);
-            },
-
-            restart: {
-                onErrorTimeout: () => {
-                    resolve();
-                    connection.destroy();
-                    this._onConnectTimeoutError(error, connection);
-                },
-            },
+        const connection = this.connectionFactory(hostname, port, resolve);
+        connection.setOnErrorTimeout(() => {
+            this.removeConnection(connection);
+            this.addPoolConnection(hostname, port);
+            connection.destroy();
+            this._onConnectTimeoutError(error, connection);
         });
-
         this._connectionsMap.set(name, connection);
-
         return [connection, promise];
     }
 
@@ -215,20 +188,16 @@ module.exports = class ConnectionService {
     async start() {
         const timeout = new this._TimeoutErrorTimer();
         timeout.start(TIMEOUT_ERROR_CONNECTION);
-
         this._connectionsMap.forEach((connection) => {
             connection.connect();
         });
-
         await Promise.all(
             Array.from(
                 this._resolversMap.values(),
             )
             .map((({promise}) => promise)),
         );
-
         await this.startPoolingConnections();
-
         timeout.stop();
     }
 

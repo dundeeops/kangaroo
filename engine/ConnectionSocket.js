@@ -1,10 +1,9 @@
 const net = require("net");
 const { Writable } = require("stream");
-const es = require("event-stream");
 const {
     getServerName,
     serializeData,
-    deserializeData,
+    parseData,
     getId,
 } = require("./SerializationUtil.js");
 const {
@@ -16,6 +15,7 @@ const AskDict = require("./AskDict.js");
 const BaseDict = require("./BaseDict.js");
 
 const DEFAULT_ASK_TIMEOUT = 1000;
+const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error connecting with a server $0:$1";
 
 const defaultOptions = {
     onReceiveInfo: () => {},
@@ -49,7 +49,6 @@ module.exports = class ConnectionSocket {
         this._askTimeout = options.askTimeout;
 
         this.initInjections(options);
-
         this.init(options);
         this.initService(options);
     }
@@ -68,15 +67,17 @@ module.exports = class ConnectionSocket {
 
     initService(options) {
         this._service = new this._RestartService({
-            onError: this.onError.bind(this),
             run: this.run.bind(this),
             isAlive: this.isAlive.bind(this),
-            timeoutErrorMessage: `TIMEOUT: Error connecting with a server ${this._hostname}:${this._port}`,
+            onError: this.onError.bind(this),
+            timeoutErrorMessage: TIMEOUT_ERROR_MESSAGE
+                .replace("$0", this._hostname)
+                .replace("$1", this._port),
             ...options.restart,
         });
     }
 
-    onAsk({id, data}) {
+    onAnswer({id, data}) {
         if (this._promiseAskMap.get(id)) {
             this._promiseAskMap.get(id).resolve(data);
         }
@@ -99,25 +100,23 @@ module.exports = class ConnectionSocket {
         this._promiseAskMap.delete(hash);
     }
 
-    async ask(type, data, _getId = getId) {
+    async ask(type, data, onError = () => {}, _getId = getId) {
         const hash = _getId();
         const ask = this.addAskPromise(hash);
-
         const timeoutError = new this._TimeoutErrorTimer({
             timeout: this._askTimeout,
-            // TODO: Log timeout error
-            onError: () => ask.resolve(),
+            onError: () => {
+                ask.resolve();
+                onError();
+            },
         });
-
         timeoutError.start();
         this.push(serializeData({
             id: hash, type, data,
         }) + BaseDict.ENDING);
         const result = await ask.promise;
         timeoutError.stop();
-
         this.deleteAskPromise(hash);
-
         return result;
     }
 
@@ -158,8 +157,6 @@ module.exports = class ConnectionSocket {
     }
 
     onError(error) {
-        // TODO: Remove
-        console.error(`Connection failed ${this.getName()}`, error.message, error.stack);
         this._onError(error);
     }
 
@@ -187,15 +184,15 @@ module.exports = class ConnectionSocket {
         this._service.start();
     }
 
-    run(callback, _deserializeData = deserializeData) {
+    run(callback, _parseData = parseData) {
         const socket = new this._net.Socket();
 
         // TODO: ES
         socket.on("data", (raw) => {
             raw.toString().split(BaseDict.ENDING).map((str) => {
                 if (str) {
-                    const data = _deserializeData(str);
-                    if (data.type === "info") {
+                    const data = _parseData(str);
+                    if (data.type === AskDict.INFO) {
                         // TODO: Move outside
                         this._socket = socket;
                         callback();
@@ -203,7 +200,7 @@ module.exports = class ConnectionSocket {
                         this._onReceiveInfo();
                         this.releaseAccumulator();
                     } else if (data.type) {
-                        this.onAsk(data);
+                        this.onAnswer(data);
                     }
                 }
             });

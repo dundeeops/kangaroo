@@ -13,7 +13,7 @@ function serializeData(data, _stringify = safeStringify) {
     return _stringify(data);
 }
 
-function deserializeData(raw, _parse = JSON.parse, _cleanString = cleanString) {
+function parseData(raw, _parse = JSON.parse, _cleanString = cleanString) {
     return _parse(_cleanString(raw));
 }
 
@@ -38,7 +38,7 @@ function getId(_getHash = getHash, _random = Math.random) {
 module.exports = {
     cleanString,
     serializeData,
-    deserializeData,
+    parseData: parseData,
     getServerName,
     getHash,
     getId,

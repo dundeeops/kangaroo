@@ -9,9 +9,14 @@ const {
 const {
     startUnlessTimeout,
 } = require("./PromiseUtil.js");
+const AskDict = require("./AskDict.js");
 
-const sendSocketInfo = (socket, mappers = []) => socket.emit("data", serializeData({
-    type: "info", mappers,
+const sendSocketInfo = (
+    socket,
+    mappers = [],
+) => socket.emit("data", serializeData({
+    type: AskDict.INFO,
+    mappers,
 }) + BaseDict.ENDING);
 
 class FakeConnectionSocket extends ConnectionSocket {

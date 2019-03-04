@@ -1,5 +1,5 @@
 const {
-    deserializeData,
+    parseData,
 } = require("./SerializationUtil.js");
 const FakeConnectionService = require("./FakeConnectionService.js");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
@@ -20,7 +20,7 @@ describe("OrchestratorServicePrototype", () => {
             message: "testDataMessage",
         });
         const message = servicePrototype._connectionService.getConnection(serverName)._socket._fakeQueue[0];
-        const data = deserializeData(message);
+        const data = parseData(message);
         expect(data.session).toBe("testSession");
         expect(data.group).toBe("testGroup");
         expect(data.stage).toBe("testStage");
