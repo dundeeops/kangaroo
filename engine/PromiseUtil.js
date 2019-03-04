@@ -1,8 +1,8 @@
 module.exports = {
-    async startUnlessTimeout(callback, timeout, _setTimeout = setTimeout) {
+    async repeatIfTrueTimeout(callback, timeout, _setTimeout = setTimeout) {
         const func = async () => {
-            const result = await callback();
-            if (result) {
+            const shouldRepeat = await callback();
+            if (shouldRepeat) {
                 _setTimeout(func, timeout);
             }
         }

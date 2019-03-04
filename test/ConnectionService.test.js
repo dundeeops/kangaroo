@@ -1,6 +1,6 @@
 const ConnectionService = require("../engine/ConnectionService.js");
 const {
-    startUnlessTimeout,
+    repeatIfTrueTimeout,
 } = require("../engine/PromiseUtil.js");
 const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
 const FakeTimeout = require("./FakeTimeout.js");
@@ -75,7 +75,7 @@ describe("ConnectionService", () => {
             port: 334,
         });
         fakeTimeout.simulateOnTick();
-        await new Promise((r) => startUnlessTimeout(() => {
+        await new Promise((r) => repeatIfTrueTimeout(() => {
             if (Array.from(connectionService._connectionsMap.keys()).length === 1) {
                 r();
                 return false;

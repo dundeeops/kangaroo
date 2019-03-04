@@ -4,7 +4,7 @@ const {
     serializeData,
 } = require("../engine/SerializationUtil.js");
 const {
-    startUnlessTimeout,
+    repeatIfTrueTimeout,
 } = require("../engine/PromiseUtil.js");
 const AskDict = require("../engine/AskDict.js");
 const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
@@ -44,7 +44,7 @@ const connectionSocketFactory = (onConnect, autoFakeConnect) => {
     return connectionSocket;
 }
 
-const waitSocket = (connectionSocket, getSocket, callback, mappers = []) => startUnlessTimeout(() => {
+const waitSocket = (connectionSocket, getSocket, callback, mappers = []) => repeatIfTrueTimeout(() => {
     const socket = getSocket();
     if (!socket) {
         return true;

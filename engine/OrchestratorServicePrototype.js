@@ -1,3 +1,4 @@
+const EventEmitter = require("events");
 const {
     makeMessage,
     getHash,
@@ -8,8 +9,9 @@ const NO_CONNECTIONS_ERROR = "There are no alive servers";
 
 const defaultOptions = {};
 
-module.exports = class OrchestratorServicePrototype {
+module.exports = class OrchestratorServicePrototype extends EventEmitter {
     constructor(_options = {}) {
+        super();
         const options = {
             ...defaultOptions,
             ..._options,

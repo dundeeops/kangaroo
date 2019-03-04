@@ -1,27 +1,29 @@
 const path = require("path");
-const fs = require("fs");
 const tar = require("tar");
 const child_process = require("child_process");
 const {
-    serializeData,
+    makeMessage,
     getId,
     getHash,
 } = require("./SerializationUtil.js");
 const {
+    deleteFolderRecursive,
+    makeDirIfNotExist,
+} = require("./FsUtil");
+const {
     getPromise,
-    startUnlessTimeout,
+    repeatIfTrueTimeout,
 } = require("./PromiseUtil");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
 const WorkerServer = require("./WorkerServer.js");
 const AskDict = require("./AskDict.js");
-const BaseDict = require("./BaseDict.js");
 
 const defaultOptions = {
     hostname: "localhost",
     port: 2325,
     modulesPath: path.resolve("./upload"),
     inject: {
-        _startUnlessTimeout: startUnlessTimeout,
+        _repeatIfTrueTimeout: repeatIfTrueTimeout,
         _WorkerServer: WorkerServer,
     },
 };
@@ -48,7 +50,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     initInjections(options) {
-        this._startUnlessTimeout = options.inject._startUnlessTimeout;
+        this._repeatIfTrueTimeout = options.inject._repeatIfTrueTimeout;
         this._WorkerServer = options.inject._WorkerServer;
     }
 
@@ -78,53 +80,45 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         };
     }
     
-    onAskGetSessionStageKeyServer(socket, id, type, data, _serializeData = serializeData) {
+    onAskGetSessionStageKeyServer(socket, id, type, data, _makeMessage = makeMessage) {
         const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);
-        socket.write(_serializeData({
-            id,
-            type,
-            data: serverName,
-        }) + BaseDict.ENDING);
+        socket.write(
+            _makeMessage({
+                id,
+                type,
+                data: serverName,
+            }),
+        );
     }
     
-    onAskIsProcessing(socket, id, type, data, _serializeData = serializeData) {
-        socket.write(_serializeData({
-            id,
-            type,
-            data: this._processingMap.get(data.group)
-                && this._processingMap.get(data.group).processes
-                    ? true
-                    : null,
-        }) + BaseDict.ENDING);
+    onAskIsProcessing(socket, id, type, data, _makeMessage = makeMessage) {
+        socket.write(
+            _makeMessage({
+                id,
+                type,
+                data: this._processingMap.get(data.group)
+                    && this._processingMap.get(data.group).processes
+                        ? true
+                        : null,
+            }),
+        );
     }
 
-    onAskCanGetStage(socket, id, type, {stage}, _serializeData = serializeData) {
+    onAskCanGetStage(socket, id, type, {stage}, _makeMessage = makeMessage) {
         const mappers = this.getMappers();
         const isContains = mappers.includes(stage);
-        socket.write(_serializeData({
-            id,
-            type,
-            data: isContains
-                ? true
-                : null,
-        }) + BaseDict.ENDING);
+        socket.write(
+            _makeMessage({
+                id,
+                type,
+                data: isContains
+                    ? true
+                    : null,
+            }),
+        );
     }
 
-    async deleteFolderRecursive(parentPath) {
-        if (fs.existsSync(parentPath)) {
-            fs.readdirSync(parentPath).forEach((file) => {
-                const curPath = path.resolve(parentPath, file);
-                if (fs.lstatSync(curPath).isDirectory()) {
-                    this.deleteFolderRecursive(curPath);
-                } else {
-                    fs.unlinkSync(curPath);
-                }
-            });
-            fs.rmdirSync(parentPath);
-        }
-    }
-
-    async onAskStaticModulesStatus(socket, id, type, data, _serializeData = serializeData) {
+    async onAskStaticModulesStatus(socket, id, type, data, _makeMessage = makeMessage) {
         let staticMapper;
         this._staticMappersMap.forEach((mapper) => {
             if (mapper.info.id === data.id) {
@@ -133,7 +127,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         });
 
         if (staticMapper) {
-            socket.write(_serializeData({
+            socket.write(_makeMessage({
                 id,
                 type,
                 data: {
@@ -141,12 +135,12 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     id: staticMapper.info.id,
                     mappers: staticMapper.info.mappers,
                 },
-            }) + BaseDict.ENDING);
+            }));
         }
     }
 
     // TODO: Split onUpload
-    async onUpload(socket, _id, type, data) {
+    async onUpload(socket, _id, type, data, _deleteFolderRecursive = deleteFolderRecursive, _makeDirIfNotExist = makeDirIfNotExist) {
         const {id, info, bytes} = data;
         let obj = this._staticMappersMap.get(id);
 
@@ -163,8 +157,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
         if (info) {
             const dir = path.resolve(this._modulesPath, id);
-            await this.deleteFolderRecursive(dir);
-            await this.checkPathExist(dir);
+            await _deleteFolderRecursive(dir);
+            await _makeDirIfNotExist(dir);
 
             const stream = tar.x({
                 C: dir,
@@ -180,15 +174,14 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             await obj.promise;
             obj.stream.end();
             delete obj.stream;
-            // const infoPath = path.resolve(obj.dir, ".info");
-            // TODO: Make promise
+            // TODO: Store info
             // fs.writeFileSync(infoPath, JSON.stringify(obj.info));
             obj.npmInstall = child_process.exec(
                 obj.info.init || "npm install --production",
                     {
                     cwd: obj.dir,
                 }, (error, stdout, stderr) => {
-                    
+                    // TODO: Emit logs
                 },
             );
             obj.npmInstall.stderr.pipe(process.stderr);
@@ -206,7 +199,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     async onAskNullAchieved(socket, id, type, data) {
-        await this._startUnlessTimeout(async () => {
+        await this._repeatIfTrueTimeout(async () => {
             if (this._processingMap.get(data.group)) {
                 const isReady = !this._processingMap.get(data.group).processes
                     && !await this._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group });
@@ -242,18 +235,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         await this._server.start();
     }
 
-    async checkStaticPathExist() {
-        await this.checkPathExist(this._modulesPath);
-    }
-
-    async checkPathExist(dir) {
-        if (!fs.existsSync(dir)){
-            fs.mkdirSync(dir);
-        }
+    async checkStaticPathExist(_makeDirIfNotExist = makeDirIfNotExist) {
+        await _makeDirIfNotExist(this._modulesPath);
     }
 
     getMappers() {
         let mappers = Array.from(this._mappers.keys());
+
         this._staticMappersMap
             .forEach((staticMapper) => {
                 Object
@@ -262,6 +250,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                         mappers = mappers.concat(staticMapper.info.mappers[entry]);
                     })
             });
+
         return mappers;
     }
 
@@ -272,6 +261,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     getStaticMapper(stage) {
         let resultStaticMap = null;
         let resultEntry = null;
+
         Array.from(this._staticMappersMap.values())
             .find((staticMap) => {
                 let entry = Object
