@@ -1,7 +1,7 @@
 const Etcd = require("node-etcd");
 const {
     promisify,
-} = require("./PromisifyUtil.js");
+} = require("./PromiseUtil.js");
 
 // TODO: Separate from Etcd.prototype
 promisify(Etcd.prototype, ["set", "get", "del", "rmdir"]);

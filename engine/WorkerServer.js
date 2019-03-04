@@ -6,7 +6,7 @@ const {
 } = require("./SerializationUtil.js");
 const {
     getPromise,
-} = require("./PromisifyUtil.js");
+} = require("./PromiseUtil.js");
 const RestartService = require("./RestartService.js");
 
 const DEFAULT_TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"

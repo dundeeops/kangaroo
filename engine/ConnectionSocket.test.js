@@ -1,4 +1,4 @@
-const Dict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 const {
     serializeData,
     deserializeData,
@@ -82,7 +82,7 @@ describe("ConnectionSocket", () => {
 
     test("should connect & send", async () => {
         let socket;
-        let expectingData = "test" + Dict.ENDING;
+        let expectingData = "test" + BaseDict.ENDING;
         let data;
         const connectionSocket = connectionSocketFactory((_socket) => {
             socket = _socket;
@@ -100,7 +100,7 @@ describe("ConnectionSocket", () => {
 
     test("should accumulate, connect & then send", async () => {
         let socket;
-        let expectingData = "test" + Dict.ENDING;
+        let expectingData = "test" + BaseDict.ENDING;
         let data;
         const connectionSocket = connectionSocketFactory((_socket) => {
             socket = _socket;

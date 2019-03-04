@@ -2,11 +2,14 @@ const EventEmitter = require("events");
 const {
     serializeData,
 } = require("./SerializationUtil.js");
-const Dict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 
-const sendSocketInfo = (socket, mappers = ["testStage"]) => socket.emit("data", serializeData({
-    type: "info", mappers,
-}) + Dict.ENDING);
+const sendSocketInfo = (socket, mappers = ["testStage"]) => socket.emit(
+    "data",
+    serializeData({
+        type: "info", mappers,
+    }) + BaseDict.ENDING,
+);
 
 module.exports = class FakeAutoSocket extends EventEmitter {
     constructor() {

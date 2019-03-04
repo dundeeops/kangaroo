@@ -4,8 +4,9 @@ const {
 } = require("./SerializationUtil.js");
 const {
     raceData,
-} = require("./PromisifyUtil");
-const Dict = require("./AskDict.js");
+} = require("./PromiseUtil");
+const AskDict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 
 const NO_CONNECTIONS_ERROR = "There are no alive servers";
 
@@ -36,7 +37,7 @@ module.exports = class OrchestratorServicePrototype {
     async sendToServer(serverName, session, group, stage, key, data, _serializeData = serializeData) {
         const connection = this._connectionService.getConnection(serverName);
         const raw = _serializeData({ session, group, stage, key, data });
-        return connection.sendData(raw + Dict.ENDING);
+        return connection.sendData(raw + BaseDict.ENDING);
     }
 
     getSessionStageKeyServer(session, stage, key, _getHash = getHash) {
@@ -50,7 +51,7 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     async askSessionStageKeyServer(session, stage, key) {
-        return await this.ask(Dict.GET_SESSION_STAGE_KEY_SERVER, {
+        return await this.ask(AskDict.GET_SESSION_STAGE_KEY_SERVER, {
             session, stage, key,
         });
     }
@@ -124,7 +125,7 @@ module.exports = class OrchestratorServicePrototype {
     }
 
     async findStageConnection(stage) {
-        const connection = await this.findConnection(Dict.CAN_GET_STAGE, {
+        const connection = await this.findConnection(AskDict.CAN_GET_STAGE, {
             stage,
         });
 

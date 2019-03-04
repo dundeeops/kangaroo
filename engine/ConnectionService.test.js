@@ -3,7 +3,7 @@ const FakeTimeout = require("./FakeTimeout.js");
 const ConnectionService = require("./ConnectionService.js");
 const {
     startUnlessTimeout,
-} = require("./PromisifyUtil.js");
+} = require("./PromiseUtil.js");
 const FakeAutoConnectionSocket = require("./FakeAutoConnectionSocket.js");
 
 const connectionServiceFactory = (options) => {

@@ -5,6 +5,4 @@ module.exports = {
     CAN_GET_STAGE: "canGetStage",
     UPLOAD: "upload",
     STATIC_MODULES_STATUS: "staticModulesStatus",
-    // TODO: Extract ENDING
-    ENDING: "\n",
 }

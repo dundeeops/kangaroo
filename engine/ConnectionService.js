@@ -4,13 +4,15 @@ const {
 } = require("./SerializationUtil.js");
 const {
     getPromise,
-} = require("./PromisifyUtil");
+} = require("./PromiseUtil");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 const POOLING_TIMEOUT = 5000;
 const TIMEOUT_ERROR_CONNECTION = "TIMEOUT: Error connecting with workers";
 
 const defaultOptions = {
+    connections: [],
+    poolingConnections: [],
     poolingTimeout: POOLING_TIMEOUT,
     inject: {
         _setInterval: setInterval,
@@ -53,14 +55,14 @@ module.exports = class ConnectionService {
     }
 
     initConnections(options) {
-        (options.connections || []).forEach(
+        options.connections.forEach(
             (connectionConfig) => this.addConnection(
                 connectionConfig.hostname,
                 connectionConfig.port,
             ),
         );
         
-        (options.poolingConnections || []).forEach(
+        options.poolingConnections.forEach(
             (connectionConfig) => this.addPoolConnection(
                 connectionConfig.hostname,
                 connectionConfig.port,

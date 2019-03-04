@@ -10,10 +10,11 @@ const {
 const {
     getPromise,
     startUnlessTimeout,
-} = require("./PromisifyUtil");
+} = require("./PromiseUtil");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
 const WorkerServer = require("./WorkerServer.js");
-const Dict = require("./AskDict.js");
+const AskDict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 
 const defaultOptions = {
     staticPath: path.resolve("./upload"),
@@ -68,12 +69,12 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     initOnAskMap() {
         this.onAskMap = {
-            [Dict.GET_SESSION_STAGE_KEY_SERVER]: this.onAskGetSessionStageKeyServer.bind(this),
-            [Dict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
-            [Dict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
-            [Dict.NULL_ACHIVED]: this.onAskNullAchived.bind(this),
-            [Dict.UPLOAD]: this.onUpload.bind(this),
-            [Dict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
+            [AskDict.GET_SESSION_STAGE_KEY_SERVER]: this.onAskGetSessionStageKeyServer.bind(this),
+            [AskDict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
+            [AskDict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
+            [AskDict.NULL_ACHIVED]: this.onAskNullAchived.bind(this),
+            [AskDict.UPLOAD]: this.onUpload.bind(this),
+            [AskDict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
         };
     }
     
@@ -83,7 +84,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             id,
             type,
             data: serverName,
-        }) + Dict.ENDING);
+        }) + BaseDict.ENDING);
     }
     
     onAskIsProcessing(socket, id, type, data, _serializeData = serializeData) {
@@ -94,7 +95,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 && this._processingMap.get(data.group).processes
                     ? true
                     : null,
-        }) + Dict.ENDING);
+        }) + BaseDict.ENDING);
     }
 
     onAskCanGetStage(socket, id, type, {stage}, _serializeData = serializeData) {
@@ -106,7 +107,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             data: isContains
                 ? true
                 : null,
-        }) + Dict.ENDING);
+        }) + BaseDict.ENDING);
     }
 
     async deleteFolderRecursive(parentPath) {
@@ -125,9 +126,9 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     async onAskStaticModulesStatus(socket, id, type, data, _serializeData = serializeData) {
         let staticMapper;
-        this._staticMappersMap.forEach(({info}) => {
-            if (info.id === data.id) {
-                staticMapper = info;
+        this._staticMappersMap.forEach((mapper) => {
+            if (mapper.info.id === data.id) {
+                staticMapper = mapper;
             }
         });
 
@@ -137,10 +138,10 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 type,
                 data: {
                     isLoading: staticMapper.isLoading,
-                    id: staticMapper.id,
-                    mappers: staticMapper.mappers,
+                    id: staticMapper.info.id,
+                    mappers: staticMapper.info.mappers,
                 },
-            }) + Dict.ENDING);
+            }) + BaseDict.ENDING);
         }
     }
 
@@ -208,7 +209,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         await this._startUnlessTimeout(async () => {
             if (this._processingMap.get(data.group)) {
                 const isReady = !this._processingMap.get(data.group).processes
-                    && !await this.ask(Dict.IS_PROCESSING, { group: data.group });
+                    && !await this.ask(AskDict.IS_PROCESSING, { group: data.group });
 
                 if (isReady) {
                     this.forEachStorageMaps(data.group, (map) => {
@@ -216,7 +217,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                     });
 
                     this.forEachUsedGroups(data.group, (nextGroup) => {
-                        this.notify(Dict.NULL_ACHIVED, {
+                        this.notify(AskDict.NULL_ACHIVED, {
                             group: nextGroup,
                         });
                     });

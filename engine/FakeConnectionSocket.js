@@ -1,6 +1,6 @@
 const FakeTimeoutErrorTimer = require("./FakeTimeoutErrorTimer.js");
 const FakeRestartService = require("./FakeRestartService.js");
-const Dict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 const ConnectionSocket = require("./ConnectionSocket.js");
 const FakeSocket = require("./FakeSocket.js");
 const {
@@ -8,11 +8,11 @@ const {
 } = require("./SerializationUtil.js");
 const {
     startUnlessTimeout,
-} = require("./PromisifyUtil.js");
+} = require("./PromiseUtil.js");
 
 const sendSocketInfo = (socket, mappers = []) => socket.emit("data", serializeData({
     type: "info", mappers,
-}) + Dict.ENDING);
+}) + BaseDict.ENDING);
 
 class FakeConnectionSocket extends ConnectionSocket {
     constructor(options) {

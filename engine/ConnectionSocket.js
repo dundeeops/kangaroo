@@ -9,10 +9,11 @@ const {
 } = require("./SerializationUtil.js");
 const {
     getPromise,
-} = require("./PromisifyUtil");
+} = require("./PromiseUtil");
 const RestartService = require("./RestartService.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
-const Dict = require("./AskDict.js");
+const AskDict = require("./AskDict.js");
+const BaseDict = require("./BaseDict.js");
 
 const DEFAULT_ASK_TIMEOUT = 1000;
 
@@ -111,7 +112,7 @@ module.exports = class ConnectionSocket {
         timeoutError.start();
         this.push(serializeData({
             id: hash, type, data,
-        }) + Dict.ENDING);
+        }) + BaseDict.ENDING);
         const result = await ask.promise;
         timeoutError.stop();
 
@@ -128,13 +129,13 @@ module.exports = class ConnectionSocket {
     async notify(type, data) {
         this.push(serializeData({
             type, data,
-        }) + Dict.ENDING);
+        }) + BaseDict.ENDING);
     }
 
     getUploadFileStream(_info, _getId = getId) {
         const connection = this;
-        const id = _getId().replace("/", "_");
-        const type = Dict.UPLOAD;
+        const id = _getId().replace("/", "_").replace("\\", "_");
+        const type = AskDict.UPLOAD;
         let isInit = false;
         const stream = new Writable({
             async read() {},
@@ -191,7 +192,7 @@ module.exports = class ConnectionSocket {
 
         // TODO: ES
         socket.on("data", (raw) => {
-            raw.toString().split(Dict.ENDING).map((str) => {
+            raw.toString().split(BaseDict.ENDING).map((str) => {
                 if (str) {
                     const data = _deserializeData(str);
                     if (data.type === "info") {
