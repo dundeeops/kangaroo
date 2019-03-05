@@ -1,33 +1,29 @@
 const path = require("path");
-const tar = require("tar");
-const child_process = require("child_process");
 const {
-    makeMessage,
     getId,
     getHash,
 } = require("./SerializationUtil.js");
 const {
-    deleteFolderRecursive,
     makeDirIfNotExist,
 } = require("./FsUtil");
-const {
-    getPromise,
-    repeatIfTrueTimeout,
-} = require("./PromiseUtil");
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
 const WorkerServer = require("./WorkerServer.js");
-const AskDict = require("./AskDict.js");
+const WorkerServiceOnAsk = require("./WorkerServiceOnAsk.js");
+
+const NO_MODULE_FOUND_ERROR = "Can't find a module in local storage at $0 with id $1 for stage $2";
 
 const defaultOptions = {
     hostname: "localhost",
     port: 2325,
     modulesPath: path.resolve("./upload"),
     inject: {
-        _repeatIfTrueTimeout: repeatIfTrueTimeout,
         _WorkerServer: WorkerServer,
+        _WorkerServiceOnAsk: WorkerServiceOnAsk,
     },
 };
 
+// TODO: Make stop/start processing
+// TODO: Make wait all unfinished processes
 // TODO: Make error processing
 // TODO: Make accumulator
 module.exports = class WorkerService extends OrchestratorServicePrototype {
@@ -45,13 +41,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
         this.initInjections(options);
         this.initWorker(options);
-        this.initServer(options);
         this.initOnAskMap();
+        this.initServer(options);
     }
 
     initInjections(options) {
-        this._repeatIfTrueTimeout = options.inject._repeatIfTrueTimeout;
         this._WorkerServer = options.inject._WorkerServer;
+        this._WorkerServiceOnAsk = options.inject._WorkerServiceOnAsk;
     }
 
     initWorker() {
@@ -60,174 +56,19 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._staticMappersMap = new Map();
     }
 
+    initOnAskMap() {
+        this._workerServiceOnAsk = new this._WorkerServiceOnAsk({
+            workerService: this,
+        });
+    }
+
     initServer(options) {
         this._server = new this._WorkerServer({
             hostname: options.hostname,
             port: options.port,
-            onAsk: this.onAsk.bind(this),
+            onAsk: this._workerServiceOnAsk.onAsk.bind(this._workerServiceOnAsk),
             onData: this.onData.bind(this),
         });
-    }
-
-    initOnAskMap() {
-        this.onAskMap = {
-            [AskDict.GET_SESSION_STAGE_KEY_SERVER]: this.onAskGetSessionStageKeyServer.bind(this),
-            [AskDict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
-            [AskDict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
-            [AskDict.NULL_ACHIEVED]: this.onAskNullAchieved.bind(this),
-            [AskDict.UPLOAD]: this.onUpload.bind(this),
-            [AskDict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
-        };
-    }
-    
-    onAskGetSessionStageKeyServer(socket, id, type, data, _makeMessage = makeMessage) {
-        const serverName = this.getSessionStageKeyServer(data.session, data.stage, data.key);
-        socket.write(
-            _makeMessage({
-                id,
-                type,
-                data: serverName,
-            }),
-        );
-    }
-    
-    onAskIsProcessing(socket, id, type, data, _makeMessage = makeMessage) {
-        socket.write(
-            _makeMessage({
-                id,
-                type,
-                data: this._processingMap.get(data.group)
-                    && this._processingMap.get(data.group).processes
-                        ? true
-                        : null,
-            }),
-        );
-    }
-
-    onAskCanGetStage(socket, id, type, {stage}, _makeMessage = makeMessage) {
-        const mappers = this.getMappers();
-        const isContains = mappers.includes(stage);
-        socket.write(
-            _makeMessage({
-                id,
-                type,
-                data: isContains
-                    ? true
-                    : null,
-            }),
-        );
-    }
-
-    async onAskStaticModulesStatus(socket, id, type, data, _makeMessage = makeMessage) {
-        let staticMapper;
-        this._staticMappersMap.forEach((mapper) => {
-            if (mapper.info.id === data.id) {
-                staticMapper = mapper;
-            }
-        });
-
-        if (staticMapper) {
-            socket.write(_makeMessage({
-                id,
-                type,
-                data: {
-                    isLoading: staticMapper.isLoading,
-                    id: staticMapper.info.id,
-                    mappers: staticMapper.info.mappers,
-                },
-            }));
-        }
-    }
-
-    // TODO: Split onUpload
-    async onUpload(socket, _id, type, data, _deleteFolderRecursive = deleteFolderRecursive, _makeDirIfNotExist = makeDirIfNotExist) {
-        const {id, info, bytes} = data;
-        let obj = this._staticMappersMap.get(id);
-
-        if (!obj) {
-            const [promise, resolve] = getPromise();
-            this._staticMappersMap.set(id, {
-                count: 0, promise, resolve,
-            });
-            obj = this._staticMappersMap.get(id);
-            obj.isLoading = true;
-        }
-
-        obj.count++;
-
-        if (info) {
-            const dir = path.resolve(this._modulesPath, id);
-            await _deleteFolderRecursive(dir);
-            await _makeDirIfNotExist(dir);
-
-            const stream = tar.x({
-                C: dir,
-                sync: true,
-            });
-
-            obj.info = info;
-            obj.stream = stream;
-            obj.dir = dir;
-        }
-        
-        if (!bytes) {
-            await obj.promise;
-            obj.stream.end();
-            delete obj.stream;
-            // TODO: Store info
-            // fs.writeFileSync(infoPath, JSON.stringify(obj.info));
-            obj.npmInstall = child_process.exec(
-                obj.info.init || "npm install --production",
-                    {
-                    cwd: obj.dir,
-                }, (error, stdout, stderr) => {
-                    // TODO: Emit logs
-                },
-            );
-            obj.npmInstall.stderr.pipe(process.stderr);
-            obj.npmInstall.on("end", () => {
-                delete obj.npmInstall;
-                obj.isLoading = false;
-            });
-        } else {
-            obj.stream.write(Buffer.from(bytes));
-            obj.count--;
-            if (obj.count === 0) {
-                obj.resolve();
-            }
-        }
-    }
-
-    async onAskNullAchieved(socket, id, type, data) {
-        await this._repeatIfTrueTimeout(async () => {
-            if (this._processingMap.get(data.group)) {
-                const isReady = !this._processingMap.get(data.group).processes
-                    && !await this._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group });
-
-                if (isReady) {
-                    this.forEachStorageMaps(data.group, (map) => {
-                        map.onFinish();
-                    });
-
-                    this.forEachUsedGroups(data.group, (nextGroup) => {
-                        this._connectionService.notify(AskDict.NULL_ACHIEVED, {
-                            group: nextGroup,
-                        });
-                    });
-
-                    this._processingMap.delete(data.group);
-                }
-
-                return !isReady;
-            } else {
-                return false;
-            }
-        }, 100);
-    }
-
-    // TODO: Extract ask names
-    async onAsk(socket, id, type, data) {
-        await this.onAskMap[type](socket, id, type, data);
     }
 
     async start() {
@@ -258,7 +99,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._mappers.set(stage, map);
     }
 
-    getStaticMapper(stage) {
+    getStaticMapperScript(stage) {
         let resultStaticMap = null;
         let resultEntry = null;
 
@@ -274,18 +115,34 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
                 return !!entry;
             });
 
-        return require(path.resolve(resultStaticMap.dir, resultEntry))[stage];
+        if (resultStaticMap && resultStaticMap.dir && resultEntry) {
+            const staticModule = require(
+                path.resolve(resultStaticMap.dir, resultEntry),
+            );
+
+            return staticModule[stage];
+        }
+
+        throw Error(
+            NO_MODULE_FOUND_ERROR
+                .replace("$0", resultStaticMap
+                    && path.resolve(resultStaticMap.dir, resultEntry))
+                .replace("$1", resultStaticMap
+                    && resultStaticMap.info
+                    && resultStaticMap.info.id)
+                .replace("$2", stage),
+        );
     }
 
-    getMapper(stage) {
+    getMapperScript(stage) {
         let mapper = this._mappers.get(stage);
         if (!mapper) {
-            mapper = this.getStaticMapper(stage);
+            mapper = this.getStaticMapperScript(stage);
         }
         return mapper;
     }
 
-    getSendWrap(group, session, _getHash = getHash) {
+    getSendCatchUsedGroupWrap(group, session, _getHash = getHash) {
         return async (stage, key, data) => {
             const nextGroup = _getHash(group, stage);
             this.setUsedGroup(group, nextGroup);
@@ -306,7 +163,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     async makeMap(group, session, key, mapper) {
-        const sendWrap = this.getSendWrap(group, session);
+        const sendWrap = this.getSendCatchUsedGroupWrap(group, session);
         const mapResult = await mapper(key, sendWrap);
         const mapCouple = this.parseMapperResult(mapResult);
         return this.makeMapBody(mapCouple[0], mapCouple[1]);
@@ -357,7 +214,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         const storageMap = this._processingMap.get(group).storageMap[hash];
 
         if (!storageMap.map) {
-            const mapper = this.getMapper(stage);
+            const mapper = this.getMapperScript(stage);
             storageMap.map = await this.makeMap(group, session, key, mapper);
         }
 
@@ -367,6 +224,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     makeProcessingMap() {
         return {
             processes: 0,
+            // TODO: Make Map
             storageMap: {},
             usedGroups: [],
         };
@@ -378,7 +236,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
     }
 
-    // TODO: Catch errors
+    // TODO: Catch errors & restore accumulators
     async onData(_socket, { session, group, stage, key, data }, _getHash = getHash, _getId = getId) {
         const hash = _getHash(session, stage, key || _getId());
         this.checkProcessingMap(group);
@@ -390,5 +248,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             this.destroyStorageMap(group, hash);
         }
         this._processingMap.get(group).processes--;
+        if (this._processingMap.get(group).processes === 0) {
+            // TODO: Notify that job has been done
+        }
     }
 }

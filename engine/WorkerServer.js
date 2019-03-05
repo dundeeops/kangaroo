@@ -109,9 +109,9 @@ module.exports = class WorkerServer extends EventEmitter {
             .pipe(this._es.split())
             .pipe(this._es.parse())
             .pipe(this._es.map(async (obj, cb) => {
-                const { id, type, data } = obj;
+                const { id, type, data, isAsk } = obj;
                 if (type) {
-                    await this._onAsk(socket, id, type, data);
+                    await this._onAsk(socket, id, type, data, isAsk);
                 } else {
                     await this._onData(socket, obj);
                 }

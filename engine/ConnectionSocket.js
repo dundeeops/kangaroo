@@ -14,7 +14,7 @@ const RestartService = require("./RestartService.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 const AskDict = require("./AskDict.js");
 
-const DEFAULT_ASK_TIMEOUT = 1000;
+const DEFAULT_ASK_TIMEOUT = 500;
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error connecting with a server $0:$1";
 
 const defaultOptions = {
@@ -100,7 +100,7 @@ module.exports = class ConnectionSocket {
         this._promiseAskMap.delete(hash);
     }
 
-    timeoutErrorFactory(onError) {
+    askTimeoutErrorFactory(onError) {
         return new this._TimeoutErrorTimer({
             timeout: this._askTimeout,
             onError: (error) => {
@@ -112,14 +112,14 @@ module.exports = class ConnectionSocket {
     async ask(type, data, onError = () => {}, _getId = getId) {
         const hash = _getId();
         const { promise, resolve } = this.addAskPromise(hash);
-        const timeoutError = this.timeoutErrorFactory((error) => {
+        const timeoutError = this.askTimeoutErrorFactory((error) => {
             resolve();
             onError(error);
         });
         timeoutError.start();
         this.push(
             makeMessage({
-                id: hash, type, data,
+                id: hash, type, data, isAsk: true,
             }),
         );
         const answer = await promise;

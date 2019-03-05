@@ -27,7 +27,7 @@ Before using this tool you need to be shure of understanding Streams in [NodeJS 
   - Static & Dynamic clasterization
   - NodeJS
 
-## Todo
+## To-do
 
 > [TODO List](./readme.todo)
 
