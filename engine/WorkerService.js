@@ -9,6 +9,7 @@ const {
 const OrchestratorServicePrototype = require("./OrchestratorServicePrototype.js");
 const WorkerServer = require("./WorkerServer.js");
 const WorkerServiceOnAsk = require("./WorkerServiceOnAsk.js");
+const AskDict = require("./AskDict.js");
 
 const NO_MODULE_FOUND_ERROR = "Can't find a module in local storage at $0 with id $1 for stage $2";
 
@@ -182,9 +183,9 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     forEachStorageMaps(group, callback) {
-        Object.keys(this._processingMap.get(group).storageMap)
-            .forEach((hash, index) => {
-                callback(this._processingMap.get(group).storageMap[hash].map, hash, index);
+        this._processingMap.get(group).storageMap
+            .forEach((storageMap, hash) => {
+                callback(storageMap.map, hash);
             });
     }
 
@@ -196,22 +197,23 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     destroyStorageMap(group, hash) {
-        delete this._processingMap.get(group).storageMap[hash];
+        delete this._processingMap.get(group).storageMap.get(hash);
     }
 
     getMap(group, hash) {
-        return this._processingMap.get(group).storageMap[hash]
-            && this._processingMap.get(group).storageMap[hash].map;
+        const storageMap = this._processingMap.get(group).storageMap.get(hash);
+        return storageMap && storageMap.map;
     }
 
     checkStorageMap(group, hash) {
-        if (!this._processingMap.get(group).storageMap[hash]) {
-            this._processingMap.get(group).storageMap[hash] = this.makeStorageMap();
+        const processingMap = this._processingMap.get(group);
+        if (!processingMap.storageMap.get(hash)) {
+            processingMap.storageMap.set(hash, this.makeStorageMap());
         }
     }
 
     async getStorageMap(group, hash, session, stage, key) {
-        const storageMap = this._processingMap.get(group).storageMap[hash];
+        const storageMap = this._processingMap.get(group).storageMap.get(hash);
 
         if (!storageMap.map) {
             const mapper = this.getMapperScript(stage);
@@ -224,8 +226,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     makeProcessingMap() {
         return {
             processes: 0,
-            // TODO: Make Map
-            storageMap: {},
+            storageMap: new Map(),
             usedGroups: [],
         };
     }
@@ -249,7 +250,9 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
         this._processingMap.get(group).processes--;
         if (this._processingMap.get(group).processes === 0) {
-            // TODO: Notify that job has been done
+            this._connectionService.notify(AskDict.END_PROCESSING, {
+                group,
+            });
         }
     }
 }

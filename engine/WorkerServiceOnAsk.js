@@ -10,14 +10,14 @@ const {
 } = require("./FsUtil");
 const {
     getPromise,
-    repeatIfTrueTimeout,
 } = require("./PromiseUtil");
 const AskDict = require("./AskDict.js");
+const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 
 const defaultOptions = {
     workerService: null,
     inject: {
-        _repeatIfTrueTimeout: repeatIfTrueTimeout,
+        _TimeoutErrorTimer: TimeoutErrorTimer,
     },
 };
 
@@ -39,7 +39,7 @@ module.exports = class WorkerServiceOnAsk {
     }
 
     initInjections(options) {
-        this._repeatIfTrueTimeout = options.inject._repeatIfTrueTimeout;
+        this._TimeoutErrorTimer = options.inject._TimeoutErrorTimer;
     }
 
     initOnAskMap() {
@@ -48,6 +48,7 @@ module.exports = class WorkerServiceOnAsk {
             [AskDict.CAN_GET_STAGE]: this.onAskCanGetStage.bind(this),
             [AskDict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
             [AskDict.NULL_ACHIEVED]: this.onAskNullAchieved.bind(this),
+            [AskDict.END_PROCESSING]: this.onAskEndProcessing.bind(this),
             [AskDict.UPLOAD]: this.onUpload.bind(this),
             [AskDict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
         };
@@ -148,12 +149,17 @@ module.exports = class WorkerServiceOnAsk {
         }
     }
 
-    // TODO: Wait until job done is not received
+    async onAskEndProcessing({ group }) {
+        this._workerService.emit(AskDict.END_PROCESSING, group);
+    }
+
     async onAskNullAchieved(data) {
-        await this._repeatIfTrueTimeout(async () => {
-            if (this._workerService._processingMap.get(data.group)) {
-                const isReady = !this._workerService._processingMap.get(data.group).processes
-                    && !await this._workerService._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group });
+        if (this._workerService._processingMap.get(data.group)) {
+            let timeout;
+            const onEndProcessing = async (group) => {
+                const isReady = group === data.group && !this._workerService._processingMap.get(data.group).processes
+                    && !await this._workerService._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group })
+                    && this._workerService._processingMap.get(group);
 
                 if (isReady) {
                     this._workerService.forEachStorageMaps(data.group, (map) => {
@@ -167,13 +173,19 @@ module.exports = class WorkerServiceOnAsk {
                     });
 
                     this._workerService._processingMap.delete(data.group);
+                    this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
+                    timeout.stop();
                 }
-
-                return !isReady;
-            } else {
-                return false;
             }
-        }, 100);
+            timeout = new this._TimeoutErrorTimer({
+                onError: () => {
+                    this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
+                },
+            });
+            this._workerService.on(AskDict.END_PROCESSING, onEndProcessing);
+            timeout.start();
+            await onEndProcessing(data.group);
+        }
     }
 
     async onAsk(socket, id, type, data, isAsk, _makeMessage = makeMessage) {
