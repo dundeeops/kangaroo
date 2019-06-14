@@ -91,6 +91,7 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
             const connection = await this.findStageConnection(stage);
             serverName = connection.getName();
         }
+console.log(serverName);
 
         if (key) {
             this.setSessionStageKeyServer(session, stage, key, serverName);

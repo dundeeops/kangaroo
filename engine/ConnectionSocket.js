@@ -278,14 +278,14 @@ module.exports = class ConnectionSocket {
         }
     }
 
-    push(data) {
+    push(message) {
         this._service.start();
 
         if (!this._socket || this._accumulatedData.length > 0) {
-            this._accumulatedData.push(data);
+            this._accumulatedData.push(message);
             return true;
         } else {
-            return this._socket.write(data);
+            return this._socket.write(message);
         }
     }
 }
