@@ -109,11 +109,11 @@ async function run() {
         null,
         new stream.Readable({
             read() {
-                if (max < index) {
+                if (max <= index) {
                     this.push(null);
                 } else {
-                    index++;
                     this.push(Buffer.from(String(index) + "\n", 'utf8'));
+                    index++;
                 }
             }
         }),

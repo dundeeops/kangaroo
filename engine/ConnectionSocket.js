@@ -14,7 +14,7 @@ const RestartService = require("./RestartService.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 const AskDict = require("./AskDict.js");
 
-const DEFAULT_ASK_TIMEOUT = 500;
+const DEFAULT_ASK_TIMEOUT = 5000;
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error connecting with a server $0:$1";
 
 const defaultOptions = {

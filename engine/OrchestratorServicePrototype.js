@@ -89,9 +89,14 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         if (!serverName) {
             // TODO: Cache responses for a short of time
             const connection = await this.findStageConnection(stage);
-            serverName = connection.getName();
+            if (connection) {
+                serverName = connection.getName();
+            }
         }
-console.log(serverName);
+
+        if (!serverName) {
+            throw Error(NO_CONNECTIONS_ERROR);
+        }
 
         if (key) {
             this.setSessionStageKeyServer(session, stage, key, serverName);
@@ -104,10 +109,6 @@ console.log(serverName);
         const connection = await this._connectionService.findConnection(AskDict.CAN_GET_STAGE, {
             stage,
         });
-
-        if (!connection) {
-            throw Error(NO_CONNECTIONS_ERROR);
-        }
 
         return connection;
     }
