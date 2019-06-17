@@ -104,7 +104,9 @@ async function run() {
     await worker.start();
     await connectionService.start();
 
-    const timeout = new TimeoutErrorTimer();
+    const timeout = new TimeoutErrorTimer({
+        timeout: 10000,
+    });
     timeout.start("TIMEOUT: Error sending an initial stream");
 
     const max = 10000;

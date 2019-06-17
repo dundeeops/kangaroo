@@ -39,7 +39,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                     key,
                     data,
                 );
-                callback();
+                callback(null, data);
             }))
             .on("end", () => {
                 this._connectionService.notify(

@@ -97,7 +97,7 @@ module.exports = class ConnectionSocket {
     onAnswer({id, data}) {
         if (this._promiseAskMap.get(id)) {
             this._promiseAskMap.get(id).resolve(
-                data && { data, connect: this },
+                data && { data, connection: this },
             );
         }
     }
@@ -145,11 +145,6 @@ module.exports = class ConnectionSocket {
         timeoutError.stop();
         this.deleteAskPromise(hash);
         return answer;
-    }
-
-    async findConnection(type, data) {
-        const result = await this.ask(type, data);
-        return result ? this : null;
     }
 
     getInfoFactory(data) {

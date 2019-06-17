@@ -64,18 +64,6 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         this._sessionStageKeyMap.set(hash, server);
     }
 
-    async askSessionStageKeyServer(session, stage, key) {
-        return await this._connectionService
-            .ask(
-                AskDict.GET_SESSION_STAGE_KEY_SERVER,
-                {
-                    session,
-                    stage,
-                    key,
-                },
-            );
-    }
-
     async getSessionStageKeyConnectionScript(session, stage, key) {
         let connectionKey;
 
@@ -89,10 +77,8 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
 
         if (!connectionKey) {
             // TODO: Cache responses for a short of time
-            const connection = await this.findStageConnection(stage);
-            if (connection) {
-                connectionKey = connection.key;
-            }
+            const answer = await this.findStageConnection(stage);
+            connectionKey = answer && answer.connection.key;
         }
 
         if (!connectionKey) {
@@ -106,11 +92,21 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         return connectionKey;
     }
 
+    async askSessionStageKeyServer(session, stage, key) {
+        return await this._connectionService
+            .ask(
+                AskDict.GET_SESSION_STAGE_KEY_SERVER,
+                {
+                    session,
+                    stage,
+                    key,
+                },
+            );
+    }
+
     async findStageConnection(stage) {
-        const connection = await this._connectionService.findConnection(AskDict.CAN_GET_STAGE, {
+        return await this._connectionService.ask(AskDict.CAN_GET_STAGE, {
             stage,
         });
-
-        return connection;
     }
 }

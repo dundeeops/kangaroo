@@ -93,9 +93,9 @@ module.exports = class WorkerServer extends EventEmitter {
         socket 
             .pipe(this._es.split())
             .pipe(this._es.parse())
-            .pipe(this._es.map(async (obj, cb) => {
+            .pipe(this._es.map(async (obj, callback) => {
                 await this._onData(socket, obj);
-                cb();
+                callback(null, obj);
             }));
     }
 

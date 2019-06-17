@@ -220,13 +220,6 @@ module.exports = class ConnectionService {
         await Promise.all(promises);
     }
 
-    async findConnection(type, data, _raceData = raceData) {
-        const promises = this.reduceConnections(
-            (connection) => connection.findConnection(type, data),
-        );
-        return await _raceData(promises);
-    }
-
     askPromises(type, data) {
         const promises = this.reduceConnections(
             (connection) => connection.ask(type, data),
