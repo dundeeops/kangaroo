@@ -188,7 +188,7 @@ module.exports = class WorkerServiceOnAsk {
         }
     }
 
-    async onAsk(socket, id, type, data, isAsk, _makeMessage = makeMessage) {
+    async onAsk(socket, { id, type, data, isAsk }, _makeMessage = makeMessage) {
         const answer = await this._onAskMap[type](data);
         if (isAsk) {
             socket.write(

@@ -63,15 +63,13 @@ module.exports = class ConnectionService {
     initConnections(options) {
         options.connections.forEach(
             (connectionConfig) => this.addConnection(
-                connectionConfig.hostname,
-                connectionConfig.port,
+                connectionConfig,
             ),
         );
         
         options.poolingConnections.forEach(
             (connectionConfig) => this.addPoolConnection(
-                connectionConfig.hostname,
-                connectionConfig.port,
+                connectionConfig,
             ),
         );
     }
@@ -92,9 +90,10 @@ module.exports = class ConnectionService {
         }
     }
 
-    connectionFactory(hostname, port, callback) {
+    connectionFactory(connectionConfig, callback) {
         const connection = new this._ConnectionSocket({
-            hostname, port,
+            key: connectionConfig,
+            ...connectionConfig,
             onReceiveInfo: (info) => {
                 callback(connection);
                 this._onConnect(connection, info);
@@ -116,10 +115,10 @@ module.exports = class ConnectionService {
 
     async connectPoolingConnections(_getPromise = getPromise) {
         const promises = [];
-        this._poolingConnectionsMap.forEach(({ hostname, port }) => {
+        this._poolingConnectionsMap.forEach((connectionConfig) => {
             const [promise, resolve] = _getPromise();
             promises.push(promise);
-            const connection = this.connectionFactory(hostname, port, resolve);
+            const connection = this.connectionFactory(connectionConfig, resolve);
             connection.connect();
         });
         const connectionsRaw = await Promise.all(promises);
@@ -127,12 +126,10 @@ module.exports = class ConnectionService {
     }
     
     setConnectionHandlers(connection) {
-        const hostname = connection.getHostname();
-        const port = connection.getPort();
         connection.setRestart(true);
         connection.setOnErrorTimeout((error) => {
             this.removeConnection(connection);
-            this.addPoolConnection(hostname, port);
+            this.addPoolConnection(connection.key);
             connection.close();
             this._onConnectTimeoutError(error, connection);
         });
@@ -141,46 +138,39 @@ module.exports = class ConnectionService {
     async stickOutPoolConnections() {
         const connections = await this.connectPoolingConnections();
         connections.forEach((connection) => {
-            const name = connection.getName();
-            const hostname = connection.getHostname();
-            const port = connection.getPort();
             this.setConnectionHandlers(connection);
-            this.removePoolConnection(hostname, port);
-            this._connectionsMap.set(name, connection);
+            this.removePoolConnection(connection.key);
+            this._connectionsMap.set(connection.key, connection);
         });
     }
 
-    removePoolConnection(hostname, port, _getServerName = getServerName) {
-        const name = _getServerName(hostname, port);
-        this._poolingConnectionsMap.delete(name);
+    removePoolConnection(connectionConfig, _getServerName = getServerName) {
+        this._poolingConnectionsMap.delete(connectionConfig);
     }
 
-    addPoolConnection(hostname, port, _getServerName = getServerName) {
-        const name = _getServerName(hostname, port);
-        this._poolingConnectionsMap.set(name, { hostname, port });
+    addPoolConnection(connectionConfig, _getServerName = getServerName) {
+        this._poolingConnectionsMap.set(connectionConfig, connectionConfig);
     }
 
-    removeConnection(hostname, port, _getServerName = getServerName) {
-        const name = _getServerName(hostname, port);
-        this._resolversMap.delete(name);
-        this._connectionsMap.delete(name);
+    removeConnection(connectionConfig, _getServerName = getServerName) {
+        this._resolversMap.delete(connectionConfig);
+        this._connectionsMap.delete(connectionConfig);
     }
 
-    addConnection(hostname, port, _getServerName = getServerName, _getPromise = getPromise) {
-        const name = _getServerName(hostname, port);
+    addConnection(connectionConfig, _getServerName = getServerName, _getPromise = getPromise) {
         const [promise, resolve] = _getPromise();
-        this._resolversMap.set(name, { promise, resolve, });
+        this._resolversMap.set(connectionConfig, { promise, resolve, });
         promise.then(() => {
             this._resolversMap.delete(name);
         });
-        const connection = this.connectionFactory(hostname, port, resolve);
+        const connection = this.connectionFactory(connectionConfig, resolve);
         this.setConnectionHandlers(connection);
-        this._connectionsMap.set(name, connection);
+        this._connectionsMap.set(connectionConfig, connection);
         return [connection, promise];
     }
 
-    async addConnectionAndConnect(hostname, port) {
-        const [connection, promise] = this.addConnection(hostname, port);
+    async addConnectionAndConnect(connectionConfig) {
+        const [connection, promise] = this.addConnection(connectionConfig);
         connection.connect();
         await promise;
         return connection;

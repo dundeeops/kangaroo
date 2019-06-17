@@ -77,32 +77,32 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
     }
 
     async getSessionStageKeyConnectionScript(session, stage, key) {
-        let serverName;
+        let connectionKey;
 
         if (key) {
-            serverName = this.getSessionStageKeyServer(session, stage, key);
-            if (!serverName) {
-                serverName = await this.askSessionStageKeyServer(session, stage, key);
+            connectionKey = this.getSessionStageKeyServer(session, stage, key);
+            if (!connectionKey) {
+                connectionKey = await this.askSessionStageKeyServer(session, stage, key);
             }
         }
 
-        if (!serverName) {
+        if (!connectionKey) {
             // TODO: Cache responses for a short of time
             const connection = await this.findStageConnection(stage);
             if (connection) {
-                serverName = connection.getName();
+                connectionKey = connection.key;
             }
         }
 
-        if (!serverName) {
+        if (!connectionKey) {
             throw Error(NO_CONNECTIONS_ERROR);
         }
 
         if (key) {
-            this.setSessionStageKeyServer(session, stage, key, serverName);
+            this.setSessionStageKeyServer(session, stage, key, connectionKey);
         }
 
-        return serverName;
+        return connectionKey;
     }
 
     async findStageConnection(stage) {

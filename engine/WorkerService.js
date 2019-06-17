@@ -14,8 +14,14 @@ const AskDict = require("./AskDict.js");
 const NO_MODULE_FOUND_ERROR = "Can't find a module in local storage at $0 with id $1 for stage $2";
 
 const defaultOptions = {
-    hostname: "localhost",
-    port: 2325,
+    managerServer: {
+        hostname: "localhost",
+        port: 2325,
+    },
+    dataServer: {
+        hostname: "localhost",
+        port: 2325,
+    },
     modulesPath: path.resolve("./upload"),
     inject: {
         _WorkerServer: WorkerServer,
@@ -64,17 +70,22 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     initServer(options) {
-        this._server = new this._WorkerServer({
-            hostname: options.hostname,
-            port: options.port,
-            onAsk: this._workerServiceOnAsk.onAsk.bind(this._workerServiceOnAsk),
+        this._managerServer = new this._WorkerServer({
+            hostname: options.managerServer.hostname,
+            port: options.managerServer.port,
+            onData: this._workerServiceOnAsk.onAsk.bind(this._workerServiceOnAsk),
+        });
+        this._dataServer = new this._WorkerServer({
+            hostname: options.dataServer.hostname,
+            port: options.dataServer.port,
             onData: this.onData.bind(this),
         });
     }
 
     async start() {
         await this.checkStaticPathExist();
-        await this._server.start();
+        await this._managerServer.start();
+        await this._dataServer.start();
     }
 
     async checkStaticPathExist(_makeDirIfNotExist = makeDirIfNotExist) {

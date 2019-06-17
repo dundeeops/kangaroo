@@ -18,7 +18,16 @@ const DEFAULT_ASK_TIMEOUT = 5000;
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error connecting with a server $0:$1";
 
 const defaultOptions = {
-    onReceiveInfo: () => {},
+    managerServer: {
+        hostname: "localhost",
+        port: 2325,
+    },
+    dataServer: {
+        hostname: "localhost",
+        port: 2325,
+    },
+    // hostname: "localhost",
+    // port: 2325,
     onError: () => {},
     onConnect: () => {},
     onDisconnect: () => {},
@@ -28,6 +37,7 @@ const defaultOptions = {
         _TimeoutErrorTimer: TimeoutErrorTimer,
         _RestartService: RestartService,
     },
+    restart: {},
 };
 
 module.exports = class ConnectionSocket {
@@ -40,17 +50,17 @@ module.exports = class ConnectionSocket {
                 ..._options.inject,
             },
         };
-        this._onReceiveInfo = options.onReceiveInfo;
+        this.key = options.key;
         this._onError = options.onError;
         this._onConnect = options.onConnect;
         this._onDisconnect = options.onDisconnect;
-        this._hostname = options.hostname;
-        this._port = options.port;
+        this._managerServerOptions = options.managerServer;
+        this._dataServerOptions = options.dataServer;
         this._askTimeout = options.askTimeout;
 
         this.initInjections(options);
         this.init(options);
-        this.initService(options);
+        this.initServices(options);
     }
 
     initInjections(options) {
@@ -60,19 +70,29 @@ module.exports = class ConnectionSocket {
     }
 
     init() {
-        this._socket = null;
+        this._managerSocket = null;
+        this._dataSocket = null;
         this._accumulatedData = [];
         this._promiseAskMap = new Map();
     }
 
-    initService(options) {
-        this._service = new this._RestartService({
-            run: this.run.bind(this),
-            isAlive: this.isAlive.bind(this),
+    initServices(options) {
+        this._managerService = new this._RestartService({
+            run: this.runManagerSocket.bind(this),
+            isAlive: this.isAliveManagerSocket.bind(this),
             onError: this.onError.bind(this),
             timeoutErrorMessage: TIMEOUT_ERROR_MESSAGE
-                .replace("$0", this._hostname)
-                .replace("$1", this._port),
+                .replace("$0", this._managerServerOptions.hostname)
+                .replace("$1", this._managerServerOptions.port),
+            ...options.restart,
+        });
+        this._dataService = new this._RestartService({
+            run: this.runDataSocket.bind(this),
+            isAlive: this.isAliveDataSocket.bind(this),
+            onError: this.onError.bind(this),
+            timeoutErrorMessage: TIMEOUT_ERROR_MESSAGE
+                .replace("$0", this._dataServerOptions.hostname)
+                .replace("$1", this._dataServerOptions.port),
             ...options.restart,
         });
     }
@@ -117,7 +137,7 @@ module.exports = class ConnectionSocket {
             onError(error);
         });
         timeoutError.start();
-        this.push(
+        this.pushToManager(
             makeMessage({
                 id: hash, type, data, isAsk: true,
             }),
@@ -131,14 +151,6 @@ module.exports = class ConnectionSocket {
     async findConnection(type, data) {
         const result = await this.ask(type, data);
         return result ? this : null;
-    }
-
-    async notify(type, data) {
-        this.push(
-            makeMessage({
-                type, data,
-            }),
-        );
     }
 
     getInfoFactory(data) {
@@ -179,8 +191,12 @@ module.exports = class ConnectionSocket {
         return stream;
     }
 
-    isAlive() {
-        return !!this._socket;
+    isAliveManagerSocket() {
+        return !!this._managerSocket;
+    }
+
+    isAliveDataSocket() {
+        return !!this._dataSocket;
     }
 
     onError(error) {
@@ -188,62 +204,52 @@ module.exports = class ConnectionSocket {
     }
 
     setRestart(value) {
-        this._service.setRestart(value);
+        this._managerService.setRestart(value);
+        this._dataService.setRestart(value);
     }
 
     setOnErrorTimeout(value) {
-        this._service.setOnErrorTimeout(value);
+        this._managerService.setOnErrorTimeout(value);
+        this._dataService.setOnErrorTimeout(value);
     }
 
-    getName() {
-        return getServerName(this._hostname, this._port);
-    }
+    // getName() {
+    //     return getServerName(this._dataServerOptions.hostname, this._dataServerOptions.port);
+    // }
 
-    getHostname() {
-        return this._hostname;
-    }
+    // getHostname() {
+    //     return this._dataServerOptions.hostname;
+    // }
 
-    getPort() {
-        return this._port;
-    }
+    // getPort() {
+    //     return this._dataServerOptions.port;
+    // }
 
     connect() {
-        this._service.start();
+        this._managerService.start();
+        this._dataService.start();
     }
 
-    onReceiveInfo(socket, data, callback) {
-        this._socket = socket;
-        callback();
-        this._onReceiveInfo(data);
-        this.releaseAccumulator();
-    }
-    
-    onData(socket, data, callback) {
-        if (data.type === AskDict.INFO) {
-            this.onReceiveInfo(socket, data, callback);
-        } else {
-            this.onAnswer(data);
-        }
-    }
-
-    run(callback, _parseData = parseData) {
+    runManagerSocket(callback, _parseData = parseData) {
         const socket = new this._net.Socket();
 
         socket
             .pipe(es.split())
             .pipe(es.parse())
             .pipe(es.map((data, cb) => {
-                this.onData(socket, data, callback);
+                this.onAnswer(data);
                 cb(null, null);
             }));
 
         socket.on("close", () => {
-            this._socket = null;
+            this._managerSocket = null;
             callback();
             this._onDisconnect(socket);
         });
 
         socket.on("ready", () => {
+            this._managerSocket = socket;
+            callback();
             this._onConnect(socket);
         });
 
@@ -252,17 +258,50 @@ module.exports = class ConnectionSocket {
         });
 
         socket.connect({
-            host: this._hostname,
-            port: this._port,
+            host: this._managerServerOptions.hostname,
+            port: this._managerServerOptions.port,
+        });
+
+        return socket;
+    }
+
+    runDataSocket(callback, _parseData = parseData) {
+        const socket = new this._net.Socket();
+
+        socket.on("close", () => {
+            this._dataSocket = null;
+            callback();
+            this._onDisconnect(socket);
+        });
+
+        socket.on("ready", () => {
+            this._dataSocket = socket;
+            callback();
+            this._onConnect(socket);
+            this.releaseAccumulator();
+        });
+
+        socket.on("error", (error) => {
+            this.onError(error);
+        });
+
+        socket.connect({
+            host: this._dataServerOptions.hostname,
+            port: this._dataServerOptions.port,
         });
 
         return socket;
     }
 
     close() {
-        if (this._socket) {
-            this._socket.destroy();
-            this._socket = null;
+        if (this._managerSocket) {
+            this._managerSocket.destroy();
+            this._managerSocket = null;
+        }
+
+        if (this._dataSocket) {
+            this._dataSocket.destroy();
+            this._dataSocket = null;
         }
     }
 
@@ -272,20 +311,34 @@ module.exports = class ConnectionSocket {
             && this.isAlive()
         ) {
             const message = this._accumulatedData[0];
-            if (this._socket.write(message)) {
+            if (this._dataSocket.write(message)) {
                 this._accumulatedData.shift();
             }
         }
     }
 
     push(message) {
-        this._service.start();
+        this._managerService.start();
+        this._dataService.start();
 
-        if (!this._socket || this._accumulatedData.length > 0) {
+        if (!this._dataSocket || this._accumulatedData.length > 0) {
             this._accumulatedData.push(message);
             return true;
         } else {
-            return this._socket.write(message);
+            return this._dataSocket.write(message);
         }
+    }
+
+    async notify(type, data) {
+        this.pushToManager(
+            makeMessage({
+                type, data,
+            }),
+        );
+    }
+
+    pushToManager(message) {
+        this._managerService.start();
+        return this._managerSocket.write(message);
     }
 }
