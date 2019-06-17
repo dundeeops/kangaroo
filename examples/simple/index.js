@@ -25,7 +25,9 @@ process.stdin.on("keypress", (str, key) => {
 const {config} = require("./Config.js");
 
 const connectionService = new ConnectionService({
-    connections: config.servers
+    connections: config.servers,
+    onConnectError: console.error,
+    onConnectTimeoutError: console.error,
 });
 
 if (argv.c) {
@@ -45,13 +47,16 @@ if (argv.c) {
 }
 
 const worker = new WorkerService({
-    hostname: config.hostname,
-    port: config.port,
+    managerServer: config.managerServer,
+    dataServer: config.dataServer,
     connectionService,
+    onError: console.error,
+    onErrorTimeout: console.error,
 });
 
 const manager = new ManagerService({
     connectionService,
+    onError: console.error,
 });
 
 // Mapping
@@ -59,6 +64,8 @@ const manager = new ManagerService({
 worker.setMapper("init", (key, send) => {
     let state = false;
     return async ({ data }) => {
+        console.log('init', data);
+        
         state = !state;
         await send("reduce_2_flows", state ? "final" : "final_alt", data);
     };
@@ -66,12 +73,16 @@ worker.setMapper("init", (key, send) => {
 
 worker.setMapper("reduce_2_flows", (key, send) => {
     return async ({ data }) => {
+        console.log('reduce_2_flows', data);
+        
         await send("map", null, data);
     };
 });
 
 worker.setMapper("map", (key, send) => {
     return async ({ data }) => {
+        console.log('map', data);
+    
         await send("final_reduce", "final", data);
     };
 });
@@ -84,6 +95,7 @@ worker.setMapper("final_reduce", (key) => {
             sum += data + "\n";
         },
         () => {
+            console.log('All processed!');
             console.log(sum);
         },
     ];
@@ -97,7 +109,6 @@ const path = require("path");
 async function run() {
     await worker.start();
     await connectionService.start();
-
     const timeout = new TimeoutErrorTimer();
     timeout.start("TIMEOUT: Error sending an initial stream");
 

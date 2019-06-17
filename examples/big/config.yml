@@ -1,5 +1,13 @@
-hostname: "127.0.0.1"
-port: 1337
+managerServer:
+  hostname: "127.0.0.1"
+  port: 1337
+dataServer:
+  hostname: "127.0.0.1"
+  port: 1338
 servers:
-  - hostname: "127.0.0.1"
-    port: 1337
+  - managerServer:
+      hostname: "127.0.0.1"
+      port: 1337
+    dataServer:
+      hostname: "127.0.0.1"
+      port: 1338

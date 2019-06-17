@@ -20,11 +20,6 @@ describe("ConnectionSocket", () => {
         expect(connectionSocket.getPort()).toBe(3333);
     });
 
-    test("should get name", async () => {
-        const connectionSocket = connectionSocketFactory();
-        expect(connectionSocket.getName()).toBe("test:3333");
-    });
-
     test("should be disconnected", async () => {
         const connectionSocket = connectionSocketFactory();
         expect(connectionSocket.isAlive()).toBe(false);

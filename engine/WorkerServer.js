@@ -2,14 +2,9 @@ const net = require("net");
 const EventEmitter = require("events");
 const es = require("event-stream");
 const {
-    getServerName,
-    makeMessage,
-} = require("./SerializationUtil.js");
-const {
     getPromise,
 } = require("./PromiseUtil.js");
 const RestartService = require("./RestartService.js");
-// const AskDict = require("./AskDict.js");
 
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
@@ -80,10 +75,6 @@ module.exports = class WorkerServer extends EventEmitter {
         this._onError(error);
     }
 
-    getName(_getServerName = getServerName) {
-        return _getServerName(this._hostname, this._port);
-    }
-
     async start() {
         this._service.start();
         await this._promise;
@@ -98,20 +89,11 @@ module.exports = class WorkerServer extends EventEmitter {
         return server;
     }
 
-    // sendInfo(socket, _makeMessage = makeMessage) {
-    //     socket.write(
-    //         _makeMessage({
-    //             type: AskDict.INFO,
-    //         }),
-    //     );
-    // }
-
     onSocket(socket) {
         socket 
             .pipe(this._es.split())
             .pipe(this._es.parse())
             .pipe(this._es.map(async (obj, cb) => {
-                // const { id, type, data, isAsk } = obj;
                 await this._onData(socket, obj);
                 cb();
             }));
@@ -119,8 +101,7 @@ module.exports = class WorkerServer extends EventEmitter {
 
     run(callback) {
         const server = this.makeServer(
-            (socket) => {
-                // this.sendInfo(socket);
+            async (socket) => {
                 await this._onConnect(socket);
                 this.onSocket(socket);
                 this.emit("socket", socket, this);

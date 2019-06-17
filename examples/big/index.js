@@ -25,7 +25,9 @@ process.stdin.on("keypress", (str, key) => {
 const {config} = require("./Config.js");
 
 const connectionService = new ConnectionService({
-    connections: config.servers
+    connections: config.servers,
+    onConnectError: console.error,
+    onConnectTimeoutError: console.error,
 });
 
 if (argv.c) {
@@ -45,13 +47,16 @@ if (argv.c) {
 }
 
 const worker = new WorkerService({
-    hostname: config.hostname,
-    port: config.port,
+    managerServer: config.managerServer,
+    dataServer: config.dataServer,
     connectionService,
+    onError: console.error,
+    onErrorTimeout: console.error,
 });
 
 const manager = new ManagerService({
     connectionService,
+    onError: console.error,
 });
 
 // Mapping

@@ -22,10 +22,6 @@ function parseData(raw, _parse = JSON.parse, _cleanString = cleanString) {
     return _parse(_cleanString(raw));
 }
 
-function getServerName(hostname, port) {
-    return `${hostname}:${port}`;
-}
-
 function getInjectCrypto(...args) {
     return inject("crypto", crypto, args[args.length - 1]);
 }
@@ -50,7 +46,6 @@ module.exports = {
     serializeData,
     makeMessage,
     parseData,
-    getServerName,
     getHash,
     getId,
 }

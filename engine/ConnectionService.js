@@ -1,8 +1,5 @@
 const ConnectionSocket = require("./ConnectionSocket.js");
 const {
-    getServerName,
-} = require("./SerializationUtil.js");
-const {
     getPromise,
     raceData,
 } = require("./PromiseUtil");
@@ -94,9 +91,9 @@ module.exports = class ConnectionService {
         const connection = new this._ConnectionSocket({
             key: connectionConfig,
             ...connectionConfig,
-            onReceiveInfo: (info) => {
+            onConnect: () => {
                 callback(connection);
-                this._onConnect(connection, info);
+                this._onConnect(connection);
             },
             onError: (error) => {
                 this._onConnectError(error, connection);
@@ -144,24 +141,24 @@ module.exports = class ConnectionService {
         });
     }
 
-    removePoolConnection(connectionConfig, _getServerName = getServerName) {
+    removePoolConnection(connectionConfig) {
         this._poolingConnectionsMap.delete(connectionConfig);
     }
 
-    addPoolConnection(connectionConfig, _getServerName = getServerName) {
+    addPoolConnection(connectionConfig) {
         this._poolingConnectionsMap.set(connectionConfig, connectionConfig);
     }
 
-    removeConnection(connectionConfig, _getServerName = getServerName) {
+    removeConnection(connectionConfig) {
         this._resolversMap.delete(connectionConfig);
         this._connectionsMap.delete(connectionConfig);
     }
 
-    addConnection(connectionConfig, _getServerName = getServerName, _getPromise = getPromise) {
+    addConnection(connectionConfig, _getPromise = getPromise) {
         const [promise, resolve] = _getPromise();
         this._resolversMap.set(connectionConfig, { promise, resolve, });
         promise.then(() => {
-            this._resolversMap.delete(name);
+            this._resolversMap.delete(connectionConfig);
         });
         const connection = this.connectionFactory(connectionConfig, resolve);
         this.setConnectionHandlers(connection);
@@ -196,8 +193,8 @@ module.exports = class ConnectionService {
         return this._connectionsMap;
     }
 
-    getConnection(name) {
-        return this._connectionsMap.get(name);
+    getConnection(connectionKey) {
+        return this._connectionsMap.get(connectionKey);
     }
 
     uploadModuleStream(readStream, data) {

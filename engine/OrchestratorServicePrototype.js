@@ -26,24 +26,24 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
     }
 
     async send(session, group, stage, key, data) {
-        const serverName = await this.getSessionStageKeyConnectionScript(
+        const connectionKey = await this.getSessionStageKeyConnectionScript(
             session,
             stage,
             key,
         );
         await this.sendToServer(
-            serverName,
+            connectionKey,
             session,
             group,
             stage,
             key,
             data,
         );
-        return serverName;
+        return connectionKey;
     }
 
-    async sendToServer(serverName, session, group, stage, key, data, _makeMessage = makeMessage) {
-        const connection = this._connectionService.getConnection(serverName);
+    async sendToServer(connectionKey, session, group, stage, key, data, _makeMessage = makeMessage) {
+        const connection = this._connectionService.getConnection(connectionKey);
         const message = _makeMessage({
             session,
             group,
@@ -82,7 +82,8 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         if (key) {
             connectionKey = this.getSessionStageKeyServer(session, stage, key);
             if (!connectionKey) {
-                connectionKey = await this.askSessionStageKeyServer(session, stage, key);
+                const answer = await this.askSessionStageKeyServer(session, stage, key);
+                connectionKey = answer && answer.connection.key;
             }
         }
 

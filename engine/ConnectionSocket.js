@@ -2,7 +2,6 @@ const net = require("net");
 const { Writable } = require("stream");
 const es = require("event-stream");
 const {
-    getServerName,
     makeMessage,
     parseData,
     getId,
@@ -14,7 +13,7 @@ const RestartService = require("./RestartService.js");
 const TimeoutErrorTimer = require("./TimeoutErrorTimer.js");
 const AskDict = require("./AskDict.js");
 
-const DEFAULT_ASK_TIMEOUT = 5000;
+const DEFAULT_ASK_TIMEOUT = 500;
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error connecting with a server $0:$1";
 
 const defaultOptions = {
@@ -26,8 +25,6 @@ const defaultOptions = {
         hostname: "localhost",
         port: 2325,
     },
-    // hostname: "localhost",
-    // port: 2325,
     onError: () => {},
     onConnect: () => {},
     onDisconnect: () => {},
@@ -99,7 +96,9 @@ module.exports = class ConnectionSocket {
 
     onAnswer({id, data}) {
         if (this._promiseAskMap.get(id)) {
-            this._promiseAskMap.get(id).resolve(data);
+            this._promiseAskMap.get(id).resolve(
+                data && { data, connect: this },
+            );
         }
     }
 
@@ -212,18 +211,6 @@ module.exports = class ConnectionSocket {
         this._managerService.setOnErrorTimeout(value);
         this._dataService.setOnErrorTimeout(value);
     }
-
-    // getName() {
-    //     return getServerName(this._dataServerOptions.hostname, this._dataServerOptions.port);
-    // }
-
-    // getHostname() {
-    //     return this._dataServerOptions.hostname;
-    // }
-
-    // getPort() {
-    //     return this._dataServerOptions.port;
-    // }
 
     connect() {
         this._managerService.start();

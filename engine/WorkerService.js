@@ -23,6 +23,7 @@ const defaultOptions = {
         port: 2325,
     },
     modulesPath: path.resolve("./upload"),
+    onError: () => {},
     inject: {
         _WorkerServer: WorkerServer,
         _WorkerServiceOnAsk: WorkerServiceOnAsk,
@@ -74,11 +75,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             hostname: options.managerServer.hostname,
             port: options.managerServer.port,
             onData: this._workerServiceOnAsk.onAsk.bind(this._workerServiceOnAsk),
+            onError: options.onError,
         });
         this._dataServer = new this._WorkerServer({
             hostname: options.dataServer.hostname,
             port: options.dataServer.port,
             onData: this.onData.bind(this),
+            onError: options.onError,
         });
     }
 
