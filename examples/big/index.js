@@ -70,10 +70,13 @@ worker.setMapper("init", (key, send) => {
 });
 
 worker.setMapper("reduce_2_flows", (key, send) => {
-    return async ({ data }) => {
+    return [async ({ data }) => {
         // await new Promise(r => setTimeout(r, 500));
         await send("map", null, data);
-    };
+    },
+    () => {
+        console.log('Finished!');
+    }];
 });
 
 worker.setMapper("map", (key, send) => {
@@ -87,9 +90,10 @@ worker.setMapper("final_reduce", (key) => {
     return [
         async ({ data }) => {
             sum++;
+            // console.log(sum);
         },
         () => {
-            console.log(sum);
+            console.log('Finished!', sum);
         },
     ];
 });
