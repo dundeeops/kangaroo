@@ -157,9 +157,11 @@ module.exports = class WorkerServiceOnAsk {
         if (this._workerService._processingMap.get(data.group)) {
             let timeout;
             const onEndProcessing = async (group) => {
+                console.log(this._workerService._processingMap.get(data.group).processes);
+                
                 const isReady = group === data.group && !this._workerService._processingMap.get(data.group).processes
                     && !await this._workerService._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group })
-                    && this._workerService._processingMap.get(group);
+                    && !!this._workerService._processingMap.get(group);
 
                 if (isReady) {
                     this._workerService.forEachStorageMaps(data.group, (map) => {
@@ -172,11 +174,12 @@ module.exports = class WorkerServiceOnAsk {
                         });
                     });
 
+                    console.log('ends', isReady, data.group, this._workerService._processingMap.get(data.group).processes);
                     this._workerService._processingMap.delete(data.group);
                     this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
                     timeout.stop();
                 }
-            }
+            };
             timeout = new this._TimeoutErrorTimer({
                 onError: () => {
                     this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);

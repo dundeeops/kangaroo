@@ -129,8 +129,6 @@ module.exports = class ConnectionSocket {
     }
 
     async ask(type, data, onError = () => {}, _getId = getId) {
-        console.log('Ask', type);
-        
         const hash = _getId();
         const { promise, resolve } = this.addAskPromise(hash);
         const timeoutError = this.askTimeoutErrorFactory((error) => {

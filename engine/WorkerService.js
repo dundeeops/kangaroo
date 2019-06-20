@@ -255,6 +255,9 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     async onData(_socket, { session, group, stage, key, data }, _getHash = getHash, _getId = getId) {
         const hash = _getHash(session, stage, key || _getId());
         this.checkProcessingMap(group);
+        if (this._processingMap.get(group).processes === 0) {
+            console.log('init', AskDict.END_PROCESSING, group, stage);
+        }
         this._processingMap.get(group).processes++;
         this.checkStorageMap(group, hash);
         const storageMap = await this.getStorageMap(group, hash, session, stage, key);
@@ -264,6 +267,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
         this._processingMap.get(group).processes--;
         if (this._processingMap.get(group).processes === 0) {
+            console.log(AskDict.END_PROCESSING, group, this._processingMap.get(group).processes);
             this._connectionService.notify(AskDict.END_PROCESSING, {
                 group,
             });

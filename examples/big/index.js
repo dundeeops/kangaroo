@@ -63,26 +63,38 @@ const manager = new ManagerService({
 
 worker.setMapper("init", (key, send) => {
     let state = false;
-    return async ({ data }) => {
-        state = !state;
-        await send("reduce_2_flows", state ? "final" : "final_alt", data);
-    };
+    return [
+        async ({ data }) => {
+            state = !state;
+            await send("reduce_2_flows", state ? "final" : "final_alt", data);
+        },
+        () => {
+            // console.log('Finished! init');
+        },
+    ];
 });
 
 worker.setMapper("reduce_2_flows", (key, send) => {
-    return [async ({ data }) => {
-        // await new Promise(r => setTimeout(r, 500));
-        await send("map", null, data);
-    },
-    () => {
-        console.log('Finished!');
-    }];
+    return [
+        async ({ data }) => {
+            // await new Promise(r => setTimeout(r, 500));
+            await send("map", null, data);
+        },
+        () => {
+            console.log('Finished 2 flows!');
+        },
+    ];
 });
 
 worker.setMapper("map", (key, send) => {
-    return async ({ data }) => {
-        await send("final_reduce", "final", data);
-    };
+    return [
+        async ({ data }) => {
+            await send("final_reduce", "final", data);
+        },
+        () => {
+            console.log('Finished map!');
+        },
+    ];
 });
 
 worker.setMapper("final_reduce", (key) => {
