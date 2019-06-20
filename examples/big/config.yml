@@ -4,6 +4,7 @@ managerServer:
 dataServer:
   hostname: "127.0.0.1"
   port: 1338
+key: basic
 servers:
   - managerServer:
       hostname: "127.0.0.1"
@@ -11,3 +12,4 @@ servers:
     dataServer:
       hostname: "127.0.0.1"
       port: 1338
+    key: basic

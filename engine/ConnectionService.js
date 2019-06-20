@@ -89,7 +89,7 @@ module.exports = class ConnectionService {
 
     connectionFactory(connectionConfig, callback) {
         const connection = new this._ConnectionSocket({
-            key: connectionConfig,
+            key: connectionConfig.key,
             ...connectionConfig,
             onConnect: () => {
                 callback(connection);
@@ -142,27 +142,27 @@ module.exports = class ConnectionService {
     }
 
     removePoolConnection(connectionConfig) {
-        this._poolingConnectionsMap.delete(connectionConfig);
+        this._poolingConnectionsMap.delete(connectionConfig.key);
     }
 
     addPoolConnection(connectionConfig) {
-        this._poolingConnectionsMap.set(connectionConfig, connectionConfig);
+        this._poolingConnectionsMap.set(connectionConfig.key, connectionConfig);
     }
 
     removeConnection(connectionConfig) {
-        this._resolversMap.delete(connectionConfig);
-        this._connectionsMap.delete(connectionConfig);
+        this._resolversMap.delete(connectionConfig.key);
+        this._connectionsMap.delete(connectionConfig.key);
     }
 
     addConnection(connectionConfig, _getPromise = getPromise) {
         const [promise, resolve] = _getPromise();
-        this._resolversMap.set(connectionConfig, { promise, resolve, });
+        this._resolversMap.set(connectionConfig.key, { promise, resolve, });
         promise.then(() => {
-            this._resolversMap.delete(connectionConfig);
+            this._resolversMap.delete(connectionConfig.key);
         });
         const connection = this.connectionFactory(connectionConfig, resolve);
         this.setConnectionHandlers(connection);
-        this._connectionsMap.set(connectionConfig, connection);
+        this._connectionsMap.set(connectionConfig.key, connection);
         return [connection, promise];
     }
 

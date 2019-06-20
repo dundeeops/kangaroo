@@ -45,6 +45,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             },
         };
         super(options);
+        this._key = options.key;
         this._modulesPath = options.modulesPath;
 
         this.initInjections(options);
@@ -166,6 +167,33 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         };
     }
 
+    async send(session, group, stage, key, data) {
+        const connectionKey = await this.getSessionStageKeyConnectionScript(
+            session,
+            stage,
+            key,
+        );
+        if (!connectionKey || this._key === connectionKey) {
+            await this.onData(null, {
+                session,
+                group,
+                stage,
+                key,
+                data,
+            });
+        } else {
+            await this.sendToServer(
+                connectionKey,
+                session,
+                group,
+                stage,
+                key,
+                data,
+            );
+        }
+        return connectionKey;
+    }
+
     parseMapperResult(mapResult) {
         if (Array.isArray(mapResult)) {
             return [mapResult[0], mapResult[1]];
@@ -263,7 +291,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     // TODO: Catch errors & restore accumulators
-    async onData(_socket, { session, group, stage, key, data }, _getHash = getHash, _getId = getId) {
+    async onData(_, { session, group, stage, key, data }, _getHash = getHash, _getId = getId) {
         const hash = _getHash(session, stage, key || _getId());
         this.checkProcessingMap(group);
         this._processingMap.get(group).processed++;
@@ -274,16 +302,17 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         if (!key) {
             this.destroyStorageMap(group, hash);
         }
+        const totalSum = this._processingMap.get(group).totalSum;
         this._processingMap.get(group).processes--;
 
-        if (this._processingMap.get(group).processes === 0 && this._processingMap.get(group).totalSum != null) {
+        if (this._processingMap.get(group).processes === 0 && totalSum != null) {
             const processedArray = await this._connectionService.askAll(AskDict.COUNT_PROCESSED, {
                 group,
-            });            
+            });
 
             const processed = processedArray.reduce((value, item) => value + item.data, 0);
 
-            if (processed === this._processingMap.get(group).totalSum) {
+            if (processed === totalSum) {
                 this._connectionService.notify(AskDict.END_PROCESSING, {
                     group,
                 });

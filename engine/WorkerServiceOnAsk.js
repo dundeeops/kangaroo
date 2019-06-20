@@ -181,9 +181,21 @@ module.exports = class WorkerServiceOnAsk {
         }
     }
 
-    async onAskNullAchieved(data) {
-        if (this._workerService._processingMap.get(data.group)) {
-            this._workerService._processingMap.get(data.group).totalSum = data.totalSum;
+    async onAskNullAchieved({ group, totalSum }) {
+        if (this._workerService._processingMap.get(group)) {
+            this._workerService._processingMap.get(group).totalSum = totalSum;
+
+            const processedArray = await this._workerService._connectionService.askAll(AskDict.COUNT_PROCESSED, {
+                group,
+            });
+
+            const processed = processedArray.reduce((value, item) => value + item.data, 0);
+
+            if (processed === totalSum) {
+                this._workerService._connectionService.notify(AskDict.END_PROCESSING, {
+                    group,
+                });
+            }
         }
     }
 

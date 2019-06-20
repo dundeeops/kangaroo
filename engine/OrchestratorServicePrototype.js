@@ -47,6 +47,10 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
     }
 
     async sendToServer(connectionKey, session, group, stage, key, data, _makeMessage = makeMessage) {
+        if (!connectionKey) {
+            throw Error(NO_CONNECTIONS_ERROR);
+        }
+
         const connection = this._connectionService.getConnection(connectionKey);
         const message = _makeMessage({
             session,
@@ -78,10 +82,6 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         if (!connectionKey) {
             const connection = await this.findStageConnection(stage);
             connectionKey = connection && connection.key;
-        }
-
-        if (!connectionKey) {
-            throw Error(NO_CONNECTIONS_ERROR);
         }
 
         if (key) {

@@ -49,6 +49,7 @@ if (argv.c) {
 const worker = new WorkerService({
     managerServer: config.managerServer,
     dataServer: config.dataServer,
+    key: config.key,
     connectionService,
     onError: console.error,
     onErrorTimeout: console.error,
@@ -129,22 +130,22 @@ async function run() {
     });
     timeout.start("TIMEOUT: Error sending an initial stream");
 
-    // const max = 1000000;
-    // let index = 0;
+    const max = 100000;
+    let index = 0;
     manager.runStream(
         "init",
         null,
-        fs.createReadStream(path.resolve("./big_data.txt"), { encoding: "utf8" }),
-        // new stream.Readable({
-        //     read() {
-        //         if (max <= index) {
-        //             this.push(null);
-        //         } else {
-        //             this.push(Buffer.from(String(index) + "\n", 'utf8'));
-        //             index++;
-        //         }
-        //     }
-        // }),
+        // fs.createReadStream(path.resolve("./big_data.txt"), { encoding: "utf8" }),
+        new stream.Readable({
+            read() {
+                if (max <= index) {
+                    this.push(null);
+                } else {
+                    this.push(Buffer.from(String(index) + "\n", 'utf8'));
+                    index++;
+                }
+            }
+        }),
     ).on("end", () => {
         console.log("The data has been sent! Processing...");
         timeout.stop();
