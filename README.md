@@ -38,3 +38,8 @@ Before using this tool you need to be shure of understanding Streams in [NodeJS 
 ## Documentation
 
 > [Open Docs](./docs/index.md)
+
+To increase memory limit for your node app (8gb):
+```
+node --max_old_space_size=8000 big-data-worker.js
+```

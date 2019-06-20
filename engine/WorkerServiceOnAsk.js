@@ -67,6 +67,14 @@ module.exports = class WorkerServiceOnAsk {
     }
 
     onAskCanGetStage({ stage }) {
+        // let counts = 0;
+        // this._workerService._processingMap.forEach((group) => {
+        //     counts += group.processes;
+        // })
+        // console.log(counts, this._workerService._processingMap.size);
+        // if (counts > 100) {
+        //     return null;
+        // }
         const mappers = this._workerService.getMappers();
         const isContains = mappers.includes(stage);
         return isContains
@@ -160,9 +168,7 @@ module.exports = class WorkerServiceOnAsk {
     async onAskEndProcessing({ group }) {
         const map = this._workerService._processingMap.get(group);
         if (map) {
-            this._workerService.forEachStorageMaps(group, (map) => {
-                map.onFinish();
-            });
+            this._workerService.finishStorageMaps(group);
 
             this._workerService.forEachUsedGroups(group, (nextGroup, totalSum) => {
                 this._workerService._connectionService.notify(AskDict.NULL_ACHIEVED, {
@@ -178,40 +184,6 @@ module.exports = class WorkerServiceOnAsk {
     async onAskNullAchieved(data) {
         if (this._workerService._processingMap.get(data.group)) {
             this._workerService._processingMap.get(data.group).totalSum = data.totalSum;
-
-            // let timeout;
-            // const onEndProcessing = async (group) => {
-            //     console.log(this._workerService._processingMap.get(data.group).processes);
-                
-            //     const isReady = group === data.group && !this._workerService._processingMap.get(data.group).processes
-            //         && !await this._workerService._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group })
-            //         && !!this._workerService._processingMap.get(group);
-
-            //     if (isReady) {
-            //         this._workerService.forEachStorageMaps(data.group, (map) => {
-            //             map.onFinish();
-            //         });
-
-            //         this._workerService.forEachUsedGroups(data.group, (nextGroup) => {
-            //             this._workerService._connectionService.notify(AskDict.NULL_ACHIEVED, {
-            //                 group: nextGroup,
-            //             });
-            //         });
-
-            //         console.log('ends', isReady, data.group, this._workerService._processingMap.get(data.group).processes);
-            //         this._workerService._processingMap.delete(data.group);
-            //         this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
-            //         timeout.stop();
-            //     }
-            // };
-            // timeout = new this._TimeoutErrorTimer({
-            //     onError: () => {
-            //         this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
-            //     },
-            // });
-            // this._workerService.on(AskDict.END_PROCESSING, onEndProcessing);
-            // timeout.start();
-            // await onEndProcessing(data.group);
         }
     }
 

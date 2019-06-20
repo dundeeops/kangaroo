@@ -272,6 +272,8 @@ module.exports = class ConnectionSocket {
             port: this._dataServerOptions.port,
         });
 
+        // socket.bigBuffer = Buffer.alloc(50000000); // 50MB Buffer
+
         return socket;
     }
 

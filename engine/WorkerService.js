@@ -204,10 +204,10 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         this._processingMap.get(group).usedGroupsTotals[nextGroup]++;
     }
 
-    forEachStorageMaps(group, callback) {
+    finishStorageMaps(group) {
         this._processingMap.get(group).storageMap
-            .forEach((storageMap, hash) => {
-                callback(storageMap.map, hash);
+            .forEach((storageMap) => {
+                storageMap.map.onFinish();
             });
     }
 

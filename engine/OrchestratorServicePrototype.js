@@ -119,31 +119,49 @@ module.exports = class OrchestratorServicePrototype extends EventEmitter {
         return sessionKeyCache.connectionKey;
     }
 
+    async findCanGetStageConnections(stage, CAN_GET_STAGE_TIMEOUT = 60000, CAN_GET_STAGE_AWAIT_TIMEOUT = 1000) {
+        const startTime = +new Date();
+        let connections = [];
+        while (!connections.length && startTime + CAN_GET_STAGE_TIMEOUT > +new Date()) {
+            const answers = await this._connectionService.askLimit(AskDict.CAN_GET_STAGE, {
+                stage,
+            });
+            connections = answers.map(c => c.connection);
+            if (!connections.length) {
+                await new Promise(r => setTimeout(r, CAN_GET_STAGE_AWAIT_TIMEOUT));
+            }
+        }
+        return connections;
+    }
+
     async findStageConnection(stage, _getPromise = getPromise) {
         let connectionCache = this._connectionCacheMap.get(stage);
         if (connectionCache && connectionCache.promise) {
             await connectionCache.promise;
             connectionCache = this._connectionCacheMap.get(stage);
         }
-        if (!connectionCache || (new Date() - connectionCache.date) > 10 * 1000) {
+        if (
+            !connectionCache
+            || (new Date() - connectionCache.date) > 10 * 1000
+            || (connectionCache.connections && !connectionCache.connections.length)
+        ) {
             const [promise, resolve] = _getPromise();
             connectionCache = {
                 promise,
                 resolve,
             };
             this._connectionCacheMap.set(stage, connectionCache);
-            const answers = await this._connectionService.askLimit(AskDict.CAN_GET_STAGE, {
-                stage,
-            });
-            const connections = answers.map(c => c.connection);
+            const connections = await this.findCanGetStageConnections(stage);
             connectionCache = {
                 date: +new Date(),
                 connections,
             };
             this._connectionCacheMap.set(stage, connectionCache);
-            resolve(answers);
+            resolve();
         }
         
-        return connectionCache.connections[Math.floor(Math.random() * connectionCache.connections.length)];
+        if (connectionCache.connections) {
+            return connectionCache.connections[Math.floor(Math.random() * connectionCache.connections.length)];
+        }
     }
 }

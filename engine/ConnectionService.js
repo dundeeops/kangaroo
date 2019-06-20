@@ -238,7 +238,7 @@ module.exports = class ConnectionService {
         return result.filter((r) => !!r);
     }
 
-    async askLimit(type, data, limit = 20, timeout = 1000) {
+    async askLimit(type, data) {
         const promises = this.askPromises(type, data);
         const result = await Promise.all(promises);
         return result.filter((r) => !!r);
