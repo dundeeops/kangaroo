@@ -29,9 +29,11 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
     runStream(stage, key, stream, _getId = getId, _getHash = getHash, _es = es) {
         const session = _getId();
         const group = _getHash(session, stage);
+        let totalSum = 0;
         return stream
             .pipe(_es.split())
             .pipe(_es.map(async (data, callback) => {
+                totalSum++;
                 await this.send(
                     session,
                     group,
@@ -46,6 +48,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                     Dict.NULL_ACHIEVED,
                     {
                         group,
+                        totalSum,
                     },
                 );
             });

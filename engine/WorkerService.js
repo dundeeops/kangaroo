@@ -161,6 +161,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         return async (stage, key, data) => {
             const nextGroup = _getHash(group, stage);
             this.setUsedGroup(group, nextGroup);
+            this.increaseUsedGroupSend(group, nextGroup);
             await this.send(session, nextGroup, stage, key, data);
         };
     }
@@ -196,6 +197,13 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
     }
 
+    increaseUsedGroupSend(group, nextGroup) {
+        if (this._processingMap.get(group).usedGroupsTotals[nextGroup] == null) {
+            this._processingMap.get(group).usedGroupsTotals[nextGroup] = 0;
+        }
+        this._processingMap.get(group).usedGroupsTotals[nextGroup]++;
+    }
+
     forEachStorageMaps(group, callback) {
         this._processingMap.get(group).storageMap
             .forEach((storageMap, hash) => {
@@ -205,8 +213,8 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     forEachUsedGroups(group, callback) {
         this._processingMap.get(group).usedGroups
-            .forEach((name, index) => {
-                callback(name, index);
+            .forEach((name) => {
+                callback(name, this._processingMap.get(group).usedGroupsTotals[name]);
             });
     }
 
@@ -239,9 +247,12 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     makeProcessingMap() {
         return {
+            totalSum: null,
+            processed: 0,
             processes: 0,
             storageMap: new Map(),
             usedGroups: [],
+            usedGroupsTotals: {},
         };
     }
 
@@ -255,9 +266,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     async onData(_socket, { session, group, stage, key, data }, _getHash = getHash, _getId = getId) {
         const hash = _getHash(session, stage, key || _getId());
         this.checkProcessingMap(group);
-        if (this._processingMap.get(group).processes === 0) {
-            console.log('init', AskDict.END_PROCESSING, group, stage);
-        }
+        this._processingMap.get(group).processed++;
         this._processingMap.get(group).processes++;
         this.checkStorageMap(group, hash);
         const storageMap = await this.getStorageMap(group, hash, session, stage, key);
@@ -266,11 +275,19 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             this.destroyStorageMap(group, hash);
         }
         this._processingMap.get(group).processes--;
-        if (this._processingMap.get(group).processes === 0) {
-            console.log(AskDict.END_PROCESSING, group, this._processingMap.get(group).processes);
-            this._connectionService.notify(AskDict.END_PROCESSING, {
+
+        if (this._processingMap.get(group).processes === 0 && this._processingMap.get(group).totalSum != null) {
+            const processedArray = await this._connectionService.askAll(AskDict.COUNT_PROCESSED, {
                 group,
-            });
+            });            
+
+            const processed = processedArray.reduce((value, item) => value + item.data, 0);
+
+            if (processed === this._processingMap.get(group).totalSum) {
+                this._connectionService.notify(AskDict.END_PROCESSING, {
+                    group,
+                });
+            }
         }
     }
 }

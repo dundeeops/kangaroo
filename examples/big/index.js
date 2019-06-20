@@ -92,11 +92,12 @@ worker.setMapper("map", (key, send) => {
             await send("final_reduce", "final", data);
         },
         () => {
-            console.log('Finished map!');
+            // console.log('Finished map!');
         },
     ];
 });
 
+const timeStarted = +new Date();
 worker.setMapper("final_reduce", (key) => {
     let sum = 0;
     return [
@@ -105,7 +106,10 @@ worker.setMapper("final_reduce", (key) => {
             // console.log(sum);
         },
         () => {
-            console.log('Finished!', sum);
+            const timePassed = (new Date() - timeStarted) / 1000;
+            const minutes = Math.floor(timePassed / 60);
+            const seconds = Math.floor(timePassed % 60);
+            console.log('Finished!', sum, `${minutes} min`, `${seconds} sec`);
         },
     ];
 });
@@ -121,25 +125,26 @@ async function run() {
     await connectionService.start();
 
     const timeout = new TimeoutErrorTimer({
-        timeout: 10000,
+        timeout: 1000000,
     });
     timeout.start("TIMEOUT: Error sending an initial stream");
 
-    const max = 10000;
-    let index = 0;
+    // const max = 1000000;
+    // let index = 0;
     manager.runStream(
         "init",
         null,
-        new stream.Readable({
-            read() {
-                if (max <= index) {
-                    this.push(null);
-                } else {
-                    this.push(Buffer.from(String(index) + "\n", 'utf8'));
-                    index++;
-                }
-            }
-        }),
+        fs.createReadStream(path.resolve("./big_data.txt"), { encoding: "utf8" }),
+        // new stream.Readable({
+        //     read() {
+        //         if (max <= index) {
+        //             this.push(null);
+        //         } else {
+        //             this.push(Buffer.from(String(index) + "\n", 'utf8'));
+        //             index++;
+        //         }
+        //     }
+        // }),
     ).on("end", () => {
         console.log("The data has been sent! Processing...");
         timeout.stop();

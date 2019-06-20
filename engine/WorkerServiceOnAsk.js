@@ -49,6 +49,7 @@ module.exports = class WorkerServiceOnAsk {
             [AskDict.IS_PROCESSING]: this.onAskIsProcessing.bind(this),
             [AskDict.NULL_ACHIEVED]: this.onAskNullAchieved.bind(this),
             [AskDict.END_PROCESSING]: this.onAskEndProcessing.bind(this),
+            [AskDict.COUNT_PROCESSED]: this.onAskCountProcessed.bind(this),
             [AskDict.UPLOAD]: this.onUpload.bind(this),
             [AskDict.STATIC_MODULES_STATUS]: this.onAskStaticModulesStatus.bind(this),
         };
@@ -149,45 +150,68 @@ module.exports = class WorkerServiceOnAsk {
         }
     }
 
+    async onAskCountProcessed({ group }) {
+        const map = this._workerService._processingMap.get(group);
+        if (map) {
+            return map.processed;
+        }
+    }
+
     async onAskEndProcessing({ group }) {
-        this._workerService.emit(AskDict.END_PROCESSING, group);
+        const map = this._workerService._processingMap.get(group);
+        if (map) {
+            this._workerService.forEachStorageMaps(group, (map) => {
+                map.onFinish();
+            });
+
+            this._workerService.forEachUsedGroups(group, (nextGroup, totalSum) => {
+                this._workerService._connectionService.notify(AskDict.NULL_ACHIEVED, {
+                    group: nextGroup,
+                    totalSum,
+                });
+            });
+
+            this._workerService._processingMap.delete(group);
+        }
     }
 
     async onAskNullAchieved(data) {
         if (this._workerService._processingMap.get(data.group)) {
-            let timeout;
-            const onEndProcessing = async (group) => {
-                console.log(this._workerService._processingMap.get(data.group).processes);
+            this._workerService._processingMap.get(data.group).totalSum = data.totalSum;
+
+            // let timeout;
+            // const onEndProcessing = async (group) => {
+            //     console.log(this._workerService._processingMap.get(data.group).processes);
                 
-                const isReady = group === data.group && !this._workerService._processingMap.get(data.group).processes
-                    && !await this._workerService._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group })
-                    && !!this._workerService._processingMap.get(group);
+            //     const isReady = group === data.group && !this._workerService._processingMap.get(data.group).processes
+            //         && !await this._workerService._connectionService.ask(AskDict.IS_PROCESSING, { group: data.group })
+            //         && !!this._workerService._processingMap.get(group);
 
-                if (isReady) {
-                    this._workerService.forEachStorageMaps(data.group, (map) => {
-                        map.onFinish();
-                    });
+            //     if (isReady) {
+            //         this._workerService.forEachStorageMaps(data.group, (map) => {
+            //             map.onFinish();
+            //         });
 
-                    this._workerService.forEachUsedGroups(data.group, (nextGroup) => {
-                        this._workerService._connectionService.notify(AskDict.NULL_ACHIEVED, {
-                            group: nextGroup,
-                        });
-                    });
+            //         this._workerService.forEachUsedGroups(data.group, (nextGroup) => {
+            //             this._workerService._connectionService.notify(AskDict.NULL_ACHIEVED, {
+            //                 group: nextGroup,
+            //             });
+            //         });
 
-                    console.log('ends', isReady, data.group, this._workerService._processingMap.get(data.group).processes);
-                    this._workerService._processingMap.delete(data.group);
-                    this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
-                    timeout.stop();
-                }
-            };
-            timeout = new this._TimeoutErrorTimer({
-                onError: () => {
-                    this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
-                },
-            });
-            this._workerService.on(AskDict.END_PROCESSING, onEndProcessing);
-            timeout.start();
-            await onEndProcessing(data.group);
+            //         console.log('ends', isReady, data.group, this._workerService._processingMap.get(data.group).processes);
+            //         this._workerService._processingMap.delete(data.group);
+            //         this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
+            //         timeout.stop();
+            //     }
+            // };
+            // timeout = new this._TimeoutErrorTimer({
+            //     onError: () => {
+            //         this._workerService.off(AskDict.END_PROCESSING, onEndProcessing);
+            //     },
+            // });
+            // this._workerService.on(AskDict.END_PROCESSING, onEndProcessing);
+            // timeout.start();
+            // await onEndProcessing(data.group);
         }
     }
 
