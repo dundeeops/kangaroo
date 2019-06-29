@@ -292,7 +292,8 @@ module.exports = class ConnectionSocket {
     releaseAccumulator() {
         while (
             this._accumulatedData.length > 0
-            && this.isAlive()
+            && this.isAliveManagerSocket()
+            && this.isAliveDataSocket()
         ) {
             const message = this._accumulatedData[0];
             if (this._dataSocket.write(message)) {

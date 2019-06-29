@@ -130,7 +130,7 @@ async function run() {
     });
     timeout.start("TIMEOUT: Error sending an initial stream");
 
-    const max = 100000;
+    const max = 10000000;
     let index = 0;
     manager.runStream(
         "init",

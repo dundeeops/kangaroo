@@ -173,7 +173,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             stage,
             key,
         );
-        if (!connectionKey || this._key === connectionKey) {
+        if (!connectionKey || this._key === connectionKey + "DISABLED") {
             await this.onData(null, {
                 session,
                 group,
@@ -247,7 +247,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     }
 
     destroyStorageMap(group, hash) {
-        delete this._processingMap.get(group).storageMap.get(hash);
+        this._processingMap.get(group).storageMap.delete(hash);
     }
 
     getMap(group, hash) {

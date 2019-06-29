@@ -90,12 +90,25 @@ module.exports = class WorkerServer extends EventEmitter {
     }
 
     onSocket(socket) {
-        socket 
+        // socket.on('readable', async () => {
+        //     try {
+        //         let data;
+        //         // read 100 bytes of data at a time
+        //         while ((data = socket.read(100))) {
+        //             await wait(1);
+        //       }
+        //     } catch (ex) {
+        //         console.error(ex);
+        //     }
+        // });
+        socket
             .pipe(this._es.split())
             .pipe(this._es.parse())
             .pipe(this._es.map(async (obj, callback) => {
+                socket.pause();
                 await this._onData(socket, obj);
                 callback(null, obj);
+                socket.resume();
             }));
     }
 

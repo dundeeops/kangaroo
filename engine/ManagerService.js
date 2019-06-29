@@ -34,6 +34,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
             .pipe(_es.split())
             .pipe(_es.map(async (data, callback) => {
                 totalSum++;
+                stream.pause();
                 await this.send(
                     session,
                     group,
@@ -42,6 +43,7 @@ module.exports = class ManagerService extends OrchestratorServicePrototype {
                     data,
                 );
                 callback(null, data);
+                stream.resume();
             }))
             .on("end", () => {
                 this._connectionService.notify(
