@@ -1,7 +1,7 @@
 const fs = require("fs");
 const stream = require("stream");
 
-const max = 10000000;
+const max = 1000000000;
 let index = 0;
 new stream.Readable({
   read() {
