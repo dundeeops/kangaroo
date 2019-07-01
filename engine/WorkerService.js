@@ -113,6 +113,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
 
     setMapper(stage, map) {
         this._mappers.set(stage, map);
+        // console.log(this._mappers.size);
     }
 
     getStaticMapperScript(stage) {
@@ -259,6 +260,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         const processingMap = this._processingMap.get(group);
         if (!processingMap.storageMap.get(hash)) {
             processingMap.storageMap.set(hash, this.makeStorageMap());
+            // console.log('sdfsd', this._processingMap.size, processingMap.storageMap.size);
         }
     }
 
@@ -287,6 +289,7 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
     checkProcessingMap(group) {
         if (!this._processingMap.get(group)) {
             this._processingMap.set(group, this.makeProcessingMap());
+            // console.log('fddfdf', processingMap.size);
         }
     }
 

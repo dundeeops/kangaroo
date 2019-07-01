@@ -1,4 +1,20 @@
 const argv = require("yargs").argv;
+const memwatch = require("node-memwatch");
+
+let hd = new memwatch.HeapDiff();
+
+memwatch.on('leak', function(info) { 
+    console.log('Leak', info);
+    let diff = hd.end();
+    console.log(diff.change.details.filter(a => a.size_bytes / 1000000 > 1).sort((a, b) => a.size_bytes > b.size_bytes));
+    hd = new memwatch.HeapDiff();
+});
+
+setInterval(() => {
+    let diff = hd.end();
+    console.log(diff.change.details.filter(a => a.size_bytes / 1000000 > 1).sort((a, b) => a.size_bytes > b.size_bytes));
+    hd = new memwatch.HeapDiff();
+}, 1000);
 
 // Engine
 
@@ -104,7 +120,7 @@ worker.setMapper("final_reduce", (key) => {
     return [
         async ({ data }) => {
             sum++;
-            // console.log(sum);
+            console.log(sum);
         },
         () => {
             const timePassed = (new Date() - timeStarted) / 1000;

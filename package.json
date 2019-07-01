@@ -16,6 +16,7 @@
   "dependencies": {
     "event-stream": "^4.0.1",
     "fast-safe-stringify": "^2.0.6",
+    "node-memwatch": "^1.0.1",
     "tar": "^4.4.8"
   }
 }
