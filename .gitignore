@@ -1,4 +1,5 @@
 node_modules
 coverage
 upload
+queue
 big_data.txt
