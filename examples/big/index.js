@@ -6,12 +6,14 @@ let hd = new memwatch.HeapDiff();
 memwatch.on('leak', function(info) { 
     console.log('Leak', info);
     let diff = hd.end();
+    console.log(diff.change.details.filter(a => a.size_bytes / 1000000 < -1).sort((a, b) => a.size_bytes < b.size_bytes));
     console.log(diff.change.details.filter(a => a.size_bytes / 1000000 > 1).sort((a, b) => a.size_bytes > b.size_bytes));
     hd = new memwatch.HeapDiff();
 });
 
 setInterval(() => {
     let diff = hd.end();
+    console.log(diff.change.details.filter(a => a.size_bytes / 1000000 < -1).sort((a, b) => a.size_bytes < b.size_bytes));
     console.log(diff.change.details.filter(a => a.size_bytes / 1000000 > 1).sort((a, b) => a.size_bytes > b.size_bytes));
     hd = new memwatch.HeapDiff();
 }, 1000);
