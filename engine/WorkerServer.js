@@ -5,6 +5,7 @@ const {
     getPromise,
 } = require("./PromiseUtil.js");
 const RestartService = require("./RestartService.js");
+const QueueService = require("./QueueService.js");
 
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
@@ -17,6 +18,7 @@ const defaultOptions = {
         _net: net,
         _es: es,
         _RestartService: RestartService,
+        _QueueService: QueueService,
     },
 };
 
@@ -48,6 +50,7 @@ module.exports = class WorkerServer extends EventEmitter {
         this._net = options.inject._net;
         this._es = options.inject._es;
         this._RestartService = options.inject._RestartService;
+        this._QueueService = options.inject._QueueService;
     }
 
     init() {
@@ -68,6 +71,9 @@ module.exports = class WorkerServer extends EventEmitter {
             isAlive: () => !!this._server,
             timeoutErrorMessage: TIMEOUT_ERROR_MESSAGE,
             ...options.restart,
+        });
+        this._queue = new this._QueueService({
+            ...options.queue,
         });
     }
 
