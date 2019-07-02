@@ -12,11 +12,13 @@
     "node-etcd": "^7.0.0",
     "yargs": "^12.0.5",
     "jest": "^24.1.0",
-    "node-memwatch": "^1.0.1"
+    "node-memwatch": "^1.0.1",
+    "typescript": "3.5.2"
   },
   "dependencies": {
     "event-stream": "^4.0.1",
     "fast-safe-stringify": "^2.0.6",
-    "tar": "^4.4.8"
+    "tar": "^4.4.8",
+    "rxjs": "6.5.2"
   }
 }
