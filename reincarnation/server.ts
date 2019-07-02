@@ -191,9 +191,11 @@ function runServerData$({
 async function runWorker$({
   port,
   hostname,
+  stages,
 }: {
   port: number;
   hostname: string;
+  stages: IStages;
 }) {
   return runServerData$({
     hostname,
