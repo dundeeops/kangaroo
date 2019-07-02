@@ -77,12 +77,18 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
             port: options.managerServer.port,
             onData: this._workerServiceOnAsk.onAsk.bind(this._workerServiceOnAsk),
             onError: options.onError,
+            queue: {
+                dir: path.resolve("./manager_queue"),
+            },
         });
         this._dataServer = new this._WorkerServer({
             hostname: options.dataServer.hostname,
             port: options.dataServer.port,
             onData: this.onData.bind(this),
             onError: options.onError,
+            queue: {
+                dir: path.resolve("./data_queue"),
+            },
         });
     }
 

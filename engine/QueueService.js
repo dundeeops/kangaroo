@@ -3,6 +3,9 @@ const path = require("path");
 const {
     getId,
 } = require("./SerializationUtil.js");
+const {
+  getPromise,
+} = require("./PromiseUtil.js");
 
 const DIR = path.resolve("./queue");
 
@@ -19,6 +22,7 @@ module.exports = class QueueService {
         };
         this._dir = options.dir;
         this._memoryLimit = options.memoryLimit;
+        this._isInitialized = false;
 
         this.init(options);
     }
@@ -26,11 +30,16 @@ module.exports = class QueueService {
     async init() {
         this._memoryQueue = [];
         this._fileList = [];
+        this._promise = null;
+        this._resolve = null;
     }
 
     async initCache() {
-        await this.initCacheFolder();
-        await this.readCacheFolder();
+        if (!this._isInitialized) {
+            await this.initCacheFolder();
+            await this.readCacheFolder();
+            this._isInitialized = true;
+        }
     }
 
     async initCacheFolder() {
@@ -106,25 +115,45 @@ module.exports = class QueueService {
     }
 
     async preserve() {
+        await this.initCache();
         if (this._memoryQueue.length) {
             await this.pushToDiskStorage(this._memoryQueue);
             this._memoryQueue = [];
         }
+        if (this._resolve) {
+            this._resolve();
+        }
     }
 
     async push(data) {
+        await this.initCache();
         if (this._memoryQueue.length > this._memoryLimit) {
             await this.pushToDiskStorage(this._memoryQueue);
             this._memoryQueue = [];
         }
         this._memoryQueue.push(data);
+        if (this._resolve) {
+            this._resolve();
+            this._resolve = null;
+        }
     }
 
     async pop() {
+        await this.initCache();
         if (this._memoryQueue.length === 0 && this._fileList.length > 0) {
             this._memoryQueue = await this.popDataStorage();
         }
         return this._memoryQueue.pop();
+    }
+
+    async popWait() {
+        let data = await this.pop();
+        if (!data) {
+            [this._promise, this._resolve] = getPromise();
+            await this._promise;
+            data = await this.pop();
+        }
+        return data;
     }
 
     async popLastN(count) {

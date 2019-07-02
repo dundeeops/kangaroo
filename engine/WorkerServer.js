@@ -5,7 +5,8 @@ const {
     getPromise,
 } = require("./PromiseUtil.js");
 const RestartService = require("./RestartService.js");
-const QueueService = require("./QueueService.js");
+const QueueDuplexStream = require("./QueueDuplexStream.js");
+const SplitTransformStream = require("./SplitTransformStream.js");
 
 const TIMEOUT_ERROR_MESSAGE = "TIMEOUT: Error starting a server"
 
@@ -18,7 +19,6 @@ const defaultOptions = {
         _net: net,
         _es: es,
         _RestartService: RestartService,
-        _QueueService: QueueService,
     },
 };
 
@@ -39,6 +39,7 @@ module.exports = class WorkerServer extends EventEmitter {
         this._onData = options.onData;
         this._onError = options.onError;
         this._onErrorTimeout = options.onErrorTimeout;
+        this._optionsQueue = options.queue;
 
         this.initInjections(options);
         this.init(options);
@@ -50,7 +51,6 @@ module.exports = class WorkerServer extends EventEmitter {
         this._net = options.inject._net;
         this._es = options.inject._es;
         this._RestartService = options.inject._RestartService;
-        this._QueueService = options.inject._QueueService;
     }
 
     init() {
@@ -71,9 +71,6 @@ module.exports = class WorkerServer extends EventEmitter {
             isAlive: () => !!this._server,
             timeoutErrorMessage: TIMEOUT_ERROR_MESSAGE,
             ...options.restart,
-        });
-        this._queue = new this._QueueService({
-            ...options.queue,
         });
     }
 
@@ -108,14 +105,18 @@ module.exports = class WorkerServer extends EventEmitter {
         //     }
         // });
         socket
-            .pipe(this._es.split())
-            .pipe(this._es.parse())
-            .pipe(this._es.map(async (obj, callback) => {
-                socket.pause();
-                await this._onData(socket, obj);
-                callback(null, obj);
-                socket.resume();
-            }));
+            .pipe(new SplitTransformStream())
+            .pipe(QueueDuplexStream(async (line) => {
+                await this._onData(socket, JSON.parse(line));
+            }, 10, socket, this._optionsQueue))
+            // .pipe(this._es.split())
+            // .pipe(this._es.parse())
+            // .pipe(this._es.map(async (obj, callback) => {
+            //     socket.pause();
+            //     await this._onData(socket, obj);
+            //     callback(null, obj);
+            //     socket.resume();
+            // }));
     }
 
     run(callback) {
