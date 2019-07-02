@@ -313,7 +313,6 @@ module.exports = class WorkerService extends OrchestratorServicePrototype {
         }
         const totalSum = this._processingMap.get(group).totalSum;
         this._processingMap.get(group).processes--;
-
         if (this._processingMap.get(group).processes === 0 && totalSum != null) {
             const processedArray = await this._connectionService.askAll(AskDict.COUNT_PROCESSED, {
                 group,

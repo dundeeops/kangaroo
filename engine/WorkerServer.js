@@ -53,8 +53,12 @@ module.exports = class WorkerServer extends EventEmitter {
         this._RestartService = options.inject._RestartService;
     }
 
-    init() {
+    init(options) {
         this._server = null;
+        this._splitStream = new SplitTransformStream();
+        this._queueStream = socket => QueueDuplexStream(async (line) => {
+            await this._onData(socket, JSON.parse(line));
+        }, 10, socket, options.queue);
     }
 
     initPromise(_getPromise = getPromise) {
@@ -105,10 +109,8 @@ module.exports = class WorkerServer extends EventEmitter {
         //     }
         // });
         socket
-            .pipe(new SplitTransformStream())
-            .pipe(QueueDuplexStream(async (line) => {
-                await this._onData(socket, JSON.parse(line));
-            }, 10, socket, this._optionsQueue))
+            .pipe(this._splitStream)
+            .pipe(this._queueStream(socket))
             // .pipe(this._es.split())
             // .pipe(this._es.parse())
             // .pipe(this._es.map(async (obj, callback) => {

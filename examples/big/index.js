@@ -80,6 +80,7 @@ const manager = new ManagerService({
 
 // Mapping
 
+let k = 0;
 worker.setMapper("init", (key, send) => {
     let state = false;
     return [
@@ -93,10 +94,12 @@ worker.setMapper("init", (key, send) => {
     ];
 });
 
+let kk = 0;
 worker.setMapper("reduce_2_flows", (key, send) => {
     return [
         async ({ data }) => {
             // await new Promise(r => setTimeout(r, 500));
+            // console.log("reduce_2_flows", kk++);
             await send("map", null, data);
         },
         () => {
@@ -105,10 +108,12 @@ worker.setMapper("reduce_2_flows", (key, send) => {
     ];
 });
 
+let kkk = 0;
 worker.setMapper("map", (key, send) => {
     return [
         async ({ data }) => {
             await send("final_reduce", "final", data);
+            // console.log("map", kkk++);
         },
         () => {
             // console.log('Finished map!');
@@ -122,7 +127,7 @@ worker.setMapper("final_reduce", (key) => {
     return [
         async ({ data }) => {
             sum++;
-            console.log(sum);
+            console.log("final_reduce", sum);
         },
         () => {
             const timePassed = (new Date() - timeStarted) / 1000;

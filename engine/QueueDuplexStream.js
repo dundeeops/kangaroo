@@ -22,8 +22,8 @@ module.exports = (fn = async (data) => {}, concurrency = 3, readableStream, opti
   }
 
   async function startCalculations() {
-    await locker;
-    if (!isStopped) {
+    while (!isStopped) {
+      await locker[0];
       let data = await queue.pop();
       if (!data) {
         data = await queue.popWait();
@@ -35,7 +35,6 @@ module.exports = (fn = async (data) => {}, concurrency = 3, readableStream, opti
         }
         doNextTask(data);
       }
-      setImmediate(startCalculations, 0);
     }
   }
 
