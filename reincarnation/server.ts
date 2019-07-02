@@ -1,5 +1,5 @@
 import { of, from, timer, Observable, throwError } from "rxjs";
-import { map, tap, switchMap, retryWhen, delayWhen, mergeMap } from "rxjs/operators";
+import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share } from "rxjs/operators";
 import net from "net";
 import domain from "domain";
 import path from "path";
@@ -128,10 +128,12 @@ function runServer$({
   port,
   hostname,
   queueDir,
+  onData,
 }: {
   port: number;
   hostname: string;
   queueDir: string;
+  onData: (socket: net.Socket, data: IData) => Promise<void>;
 }) {
   return runDomainServer$({
     hostname,
@@ -152,6 +154,40 @@ function runServer$({
   });
 }
 
+function runServerData$({
+  port,
+  hostname,
+  queueDir,
+}: {
+  port: number;
+  hostname: string;
+  queueDir: string;
+}) {
+  return new Observable<{
+    socket: net.Socket;
+    data: IData;
+  }>(o => {
+    const server$ = runServer$({
+      hostname,
+      port,
+      queueDir,
+      onData: async (socket, data) => {
+        o.next({
+          socket, data,
+        })
+      },
+    }).subscribe({
+      error(error) {
+        o.error(error);
+      },
+      complete() {
+        o.complete();
+      },
+    });
+    o.add(() => server$.unsubscribe());
+  });
+}
+
 async function runWorker$({
   port,
   hostname,
@@ -159,12 +195,12 @@ async function runWorker$({
   port: number;
   hostname: string;
 }) {
-  return runServer$({
+  return runServerData$({
     hostname,
     port,
     queueDir: path.resolve("./data_queue"),
   }).pipe(
-    tap(data => {
+    tap(({ socket, data }) => {
       console.log(data);
     })
   );
