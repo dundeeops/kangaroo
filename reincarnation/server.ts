@@ -1,9 +1,10 @@
-import { of, from, timer, Observable, throwError } from "rxjs";
-import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share } from "rxjs/operators";
+import { of, from, timer, Observable, throwError, combineLatest } from "rxjs";
+import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share, concat, concatMap } from "rxjs/operators";
 import net from "net";
 import domain from "domain";
 import path from "path";
 import { SplitTransformStream } from "./splitTransformStream";
+import { getHash } from "./serializationUtil";
 import { queueDuplexStream } from "./queueDuplexStream";
 
 interface IDataBase {
@@ -154,29 +155,49 @@ function runServer$({
   });
 }
 
-function runServerData$({
-  port,
-  hostname,
-  queueDir,
-}: {
-  port: number;
-  hostname: string;
-  queueDir: string;
-}) {
-  return new Observable<{
-    socket: net.Socket;
-    data: IData;
-  }>(o => {
-    const server$ = runServer$({
-      hostname,
-      port,
-      queueDir,
-      onData: async (socket, data) => {
-        o.next({
-          socket, data,
-        })
-      },
-    }).subscribe({
+// function runServerData$({
+//   port,
+//   hostname,
+//   queueDir,
+// }: {
+//   port: number;
+//   hostname: string;
+//   queueDir: string;
+// }) {
+//   return new Observable<{
+//     socket: net.Socket;
+//     data: IData;
+//   }>(o => {
+//     const server$ = runServer$({
+//       hostname,
+//       port,
+//       queueDir,
+//       onData: async (socket, data) => {
+//         o.next({
+//           socket, data,
+//         })
+//       },
+//     }).subscribe({
+//       error(error) {
+//         o.error(error);
+//       },
+//       complete() {
+//         o.complete();
+//       },
+//     });
+//     o.add(() => server$.unsubscribe());
+//   });
+// }
+
+function convertCallbackData$<T>(
+  observable: (callback: (onCallbackData: () => Promise<T>) => Promise<void>) => Observable<any>
+) {
+  return new Observable<T>(o => {
+    const observable$ = observable(
+      async (onCallbackData) => {
+        o.next(await onCallbackData());
+      }
+    ).subscribe({
       error(error) {
         o.error(error);
       },
@@ -184,11 +205,124 @@ function runServerData$({
         o.complete();
       },
     });
-    o.add(() => server$.unsubscribe());
+    o.add(() => observable$.unsubscribe());
   });
 }
 
-async function runWorker$({
+// function runWorkerData$({
+//   port,
+//   hostname,
+//   stages,
+// }: {
+//   port: number;
+//   hostname: string;
+//   stages: IStages;
+// }) {
+//   return convertCallbackData$<{
+//     socket: net.Socket;
+//     data: IData;
+//   }>(cb => runServer$({
+//     hostname,
+//     port,
+//     queueDir: path.resolve("./data_queue"),
+//     onData: async (socket, data) => await cb(
+//       async () => {
+//         return {
+//           socket,
+//           data,
+//         }
+//       }
+//     )
+//   })).pipe(
+//     tap(({ socket, data }) => {
+//       console.log(data);
+//     })
+//   );
+// }
+
+interface IProcessingStorageMap {
+  onData: (data: { stage: string, key?: string, data: IData; eof: boolean }) => Promise<void>;
+  onFinish: () => Promise<void>
+}
+
+interface IProcessingStorage {
+  totalSum?: number;
+  processed: number;
+  processes: number;
+  storageMap: Map<string, IProcessingStorageMap>;
+  usedGroups: string[];
+  usedGroupsTotals: {
+    [key: string]: number;
+  },
+}
+
+interface IProcessing {
+  totalSum?: number;
+  processed: number;
+  processes: number;
+  storageMap: Map<string, IProcessingStorage>;
+  usedGroups: string[];
+  usedGroupsTotals: {},
+}
+
+function getDefaultProcessingMap(): IProcessing {
+  return {
+    totalSum: null,
+    processed: 0,
+    processes: 0,
+    storageMap: new Map(),
+    usedGroups: [],
+    usedGroupsTotals: {},
+  }
+}
+
+async function send(session, group, stage, key, data) {
+  const connectionKey = await getSessionStageKeyConnectionScript(
+      session,
+      stage,
+      key,
+  );
+  if (!connectionKey || _key === connectionKey + "DISABLED") {
+      await onData(null, {
+          session,
+          group,
+          stage,
+          key,
+          data,
+      });
+  } else {
+      await sendToServer(
+          connectionKey,
+          session,
+          group,
+          stage,
+          key,
+          data,
+      );
+  }
+  return connectionKey;
+}
+
+function getSendCatchUsedGroupWrap(group, session) {
+  return async (stage, key, data) => {
+    const nextGroup = getHash(group, stage);
+    setUsedGroup(group, nextGroup);
+    increaseUsedGroupSend(group, nextGroup);
+    await send(session, nextGroup, stage, key, data);
+  };
+}
+
+async function getProcessingStorageMap(group, session, key, mapper): Promise<IProcessingStorageMap> {
+  const sendWrap = getSendCatchUsedGroupWrap(group, session);
+  const mapResult = await mapper(key, sendWrap);
+  const mapCouple = parseMapperResult(mapResult);
+  return {
+    onData: mapCouple[0],
+    onFinish: mapCouple[1],
+  };
+}
+
+function runWorker$({
   port,
   hostname,
   stages,
@@ -197,14 +331,23 @@ async function runWorker$({
   hostname: string;
   stages: IStages;
 }) {
-  return runServerData$({
-    hostname,
-    port,
-    queueDir: path.resolve("./data_queue"),
-  }).pipe(
-    tap(({ socket, data }) => {
-      console.log(data);
-    })
+  return of<Map<string, IProcessing>>(new Map()).pipe(
+    concatMap(maps => combineLatest([
+      of(maps),
+      of(async (socket: net.Socket, data: IData) => {
+
+      }),
+    ])),
+    concatMap(([maps, onData]) => combineLatest([
+      of(maps),
+      runServer$({
+        hostname,
+        port,
+        queueDir: path.resolve("./data_queue"),
+        onData,
+      })
+    ])),
+    tap(a => console.log(a))
   );
 }
 
