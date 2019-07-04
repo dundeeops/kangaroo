@@ -1,8 +1,8 @@
 export function getPromise(): [
     Promise<any>, Function, Function
 ] {
-    let resolve = () => { };
-    let reject = () => { };
+    let resolve = () => {};
+    let reject = () => {};
     const promise = new Promise((r, e) => {
         resolve = r;
         reject = e;
@@ -10,7 +10,7 @@ export function getPromise(): [
     return [promise, resolve, reject];
 }
 
-export async function raceData(promises) {
+export async function raceData<T>(promises: Promise<T>[]) {
     let resolved = false;
     return await new Promise((r, e) => {
         promises.forEach((promise) => {

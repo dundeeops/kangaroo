@@ -5,8 +5,9 @@ import domain from "domain";
 import path from "path";
 import { SplitTransformStream } from "./splitTransformStream";
 import { Writable } from "stream";
-import { getHash } from "./serializationUtil";
+import { getHash, getId } from "./serializationUtil";
 import { queueDuplexStream } from "./queueDuplexStream";
+import { getPromise } from "./promiseUtil";
 
 interface IDataBase {
   [key: string]: string | number | boolean | IDataBase | Array<string | number | boolean | IDataBase>;
@@ -142,7 +143,7 @@ async function runServer({
 async function runConnection({
   key,
   port,
-  hostname, 
+  hostname,
   onData,
 }: {
   key: string;
@@ -485,27 +486,16 @@ function runConnections$({
 //   );
 // }
 
-interface IProcessingStorageMap {
+interface IProcessingStorage {
   onData: (data: { stage: string, key?: string, data: IData; eof: boolean }) => Promise<void>;
   onFinish: () => Promise<void>
-}
-
-interface IProcessingStorage {
-  totalSum?: number;
-  processed: number;
-  processes: number;
-  storageMap: Map<string, IProcessingStorageMap>;
-  usedGroups: string[];
-  usedGroupsTotals: {
-    [key: string]: number;
-  },
 }
 
 interface IProcessing {
   totalSum?: number;
   processed: number;
   processes: number;
-  storageMap: Map<string, IProcessingStorage>;
+  storage: Map<string, IProcessingStorage>;
   usedGroups: string[];
   usedGroupsTotals: {},
 }
@@ -517,7 +507,7 @@ function getDefaultProcessingMap(): IProcessing {
     totalSum: null,
     processed: 0,
     processes: 0,
-    storageMap: new Map(),
+    storage: new Map(),
     usedGroups: [],
     usedGroupsTotals: {},
   }
@@ -559,7 +549,7 @@ function getDefaultProcessingMap(): IProcessing {
 //   };
 // }
 
-// async function getProcessingStorageMap(group, session, key, mapper): Promise<IProcessingStorageMap> {
+// async function getProcessingStorage(group, session, key, mapper): Promise<IProcessingStorage> {
 //   const sendWrap = getSendCatchUsedGroupWrap(group, session);
 //   const mapResult = await mapper(key, sendWrap);
 //   const mapCouple = parseMapperResult(mapResult);
@@ -590,6 +580,7 @@ interface IMachineState {
     key?: string;
     data: IData;
   }) => Promise<void>;
+  onData?: (data: IData) => Promise<void>;
 }
 
 interface IConfiguration {
@@ -621,12 +612,30 @@ interface IConfiguration {
 interface IServerState {
   processingState: IProcessingState;
   machineState: IMachineState;
+  sessionStageKeyCache: Map<string, {
+    connectionKey: string;
+    promise: Promise<void>;
+    resolve: Function;
+  }>;
+  connectionCache: Map<string, {
+    date: number;
+    connections: string[];
+    promise: Promise<void>;
+    resolve: Function;
+  }>;
+  answers: Map<string, {
+    promise: Promise<void>;
+    resolve: Function;
+  }>;
 }
 
 function runMachine$(configuration: IConfiguration) {
   return of<IServerState>({
     processingState: new Map(),
+    sessionStageKeyCache: new Map(),
+    connectionCache: new Map(),
     machineState: {},
+    answers: new Map(),
   }).pipe(
     mergeMap(state => combineLatest([
       of(state),
@@ -646,35 +655,143 @@ function runMachine$(configuration: IConfiguration) {
         onDataConnectionManager: async (key, socket, data) => {
 
         },
-        onDataConnectionWorker: async (key, socket, data) => {
-
-        },
+        onDataConnectionWorker: async (key, socket, data) => {}, // Not used
       }),
     ])),
     map(([state, server, connections]) => {
+      const askAll = async (question, data) => {
+        const results: [string, IData][] = await Promise.all(connections.map(
+          async ([key, manager, worker]): Promise<[string, IData]> => {
+            const id = getId();
+            const [promise, resolve] = getPromise();
+            state.answers.set(id, {
+              promise,
+              resolve,
+            })
+            manager.push(JSON.stringify({
+              id,
+              question,
+              data,
+            }));
+            const result: IData = await promise;
+            state.answers.delete(id);
+            return [key, result];
+          }
+        ));
+        return results.filter(([key, result]) => !!result);
+      }
+
+      const ask = async (question, data) => {
+        let resolved = false;
+        let result = await new Promise<[string, IData]>((r, e) => connections.forEach(
+          async ([key, manager, worker]) => {
+            const id = getId();
+            const [promise, resolve] = getPromise();
+            state.answers.set(id, {
+              promise,
+              resolve,
+            });
+            manager.push(JSON.stringify({
+              id,
+              question,
+              data,
+            }));
+            const result = await promise;
+            if (result && !resolved) {
+              resolved = true;
+              r([key, result]);
+            }
+            state.answers.delete(id);
+          }
+        ));
+        return result;
+      }
+
+      const notify = async (type, data) => {
+        connections.forEach(
+          async ([key, manager, worker]) => {
+            manager.push(JSON.stringify({
+              type,
+              data,
+            }));
+          }
+        );
+      }
+
       state.machineState.ask = async (question, data) => {
-        switch(question) {
+        const { session, stage, group, key } = data as {
+          session: string;
+          group: string;
+          stage: string;
+          key: string;
+        };
+        switch (question) {
           case QuestionTypeEnum.CAN_GET_STAGE:
-            return true;
+            return Object.keys(configuration.stages).includes(stage);
           case QuestionTypeEnum.COUNT_PROCESSED:
-            return 0;
+            const map = state.processingState.get(group);
+            return map ? map.processed : 0;
           case QuestionTypeEnum.GET_SESSION_STAGE_KEY_SERVER:
-            return true;
+            const hash = getHash(session, stage, key);
+            return state.sessionStageKeyCache.has(hash)
+              && state.sessionStageKeyCache.get(hash).connectionKey;
         }
         return null;
       };
 
       state.machineState.notify = async (type, data) => {
-        switch(type) {
-          case NotificationTypeEnum.NULL_ACHIEVED: 
+        const { group, totalSum } = data as {
+          group: string;
+          totalSum: number;
+        };
+        const map = group && state.processingState.get(group);
+        switch (type) {
+          case NotificationTypeEnum.NULL_ACHIEVED:
+            if (map) {
+              map.totalSum = totalSum;
+              const processedArray = await askAll(
+                QuestionTypeEnum.COUNT_PROCESSED,
+                {
+                  group,
+                },
+              );
+              const processed = processedArray
+                .reduce((value, [key, item]: [string, number]) => value + item, 0);
+              if (processed === totalSum) {
+                notify(
+                  NotificationTypeEnum.END_PROCESSING,
+                  {
+                    group,
+                  },
+                );
+              }
+            }
             return;
-          case NotificationTypeEnum.END_PROCESSING: 
+          case NotificationTypeEnum.END_PROCESSING:
+            if (map) {
+              map
+                .storage
+                .forEach((storage) => {
+                    storage.onFinish();
+                });
+
+              map.usedGroups
+                .forEach((nextGroup) => {
+                  const totalSum = this._processingMap.get(group).usedGroupsTotals[name];
+                  notify(NotificationTypeEnum.NULL_ACHIEVED, {
+                    group: nextGroup,
+                    totalSum,
+                  });
+                });
+
+              state.processingState.delete(group);
+            }
             return;
         }
       };
 
       state.machineState.send = async (serverKey, data) => {
-        const [,,worker] = connections.find(([key]) => key === serverKey);
+        const [, , worker] = connections.find(([key]) => key === serverKey);
         worker.push(JSON.stringify(data));
       };
 
