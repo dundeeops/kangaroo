@@ -643,8 +643,17 @@ function runMachine$(configuration: IConfiguration) {
         key: configuration.key,
         manager: configuration.manager,
         worker: configuration.worker,
-        onDataManager: async (key, socket, data) => {
-
+        onDataManager: async (key, socket, raw: IDataBase) => {
+          const { id, question, type, data } = raw;
+          if (id) {
+            const answer = await state.machineState.ask(question as QuestionTypeEnum, data);
+            socket.push(JSON.stringify({
+              id,
+              answer,
+            }));
+          } else {
+            await state.machineState.notify(type as NotificationTypeEnum, data);
+          }
         },
         onDataWorker: async (key, socket, data) => {
 
@@ -652,8 +661,9 @@ function runMachine$(configuration: IConfiguration) {
       }),
       runConnections$({
         connections: configuration.connections,
-        onDataConnectionManager: async (key, socket, data) => {
-
+        onDataConnectionManager: async (key, socket, raw: IDataBase) => {
+          const { id, answer } = raw;
+          state.answers.get(id as string).resolve(answer);
         },
         onDataConnectionWorker: async (key, socket, data) => {}, // Not used
       }),
@@ -673,9 +683,9 @@ function runMachine$(configuration: IConfiguration) {
               question,
               data,
             }));
-            const result: IData = await promise;
+            const answer: IData = await promise;
             state.answers.delete(id);
-            return [key, result];
+            return [key, answer];
           }
         ));
         return results.filter(([key, result]) => !!result);
@@ -696,10 +706,10 @@ function runMachine$(configuration: IConfiguration) {
               question,
               data,
             }));
-            const result = await promise;
-            if (result && !resolved) {
+            const answer = await promise;
+            if (answer && !resolved) {
               resolved = true;
-              r([key, result]);
+              r([key, answer]);
             }
             state.answers.delete(id);
           }
