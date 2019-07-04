@@ -573,13 +573,13 @@ enum NotificationTypeEnum {
 interface IMachineState {
   ask?: (question: QuestionTypeEnum, data: IData) => Promise<IData>;
   notify?: (type: NotificationTypeEnum, data: IData) => Promise<void>;
-  send?: (workerKey: string, data: {
-    session: string;
-    group: string;
-    stage: string;
-    key?: string;
-    data: IData;
-  }) => Promise<void>;
+  // send?: (workerKey: string, data: {
+  //   session: string;
+  //   group: string;
+  //   stage: string;
+  //   key?: string;
+  //   data: IData;
+  // }) => Promise<void>;
   onData?: (data: IData) => Promise<void>;
 }
 
@@ -656,7 +656,7 @@ function runMachine$(configuration: IConfiguration) {
           }
         },
         onDataWorker: async (key, socket, data) => {
-
+          await state.machineState.onData(data);
         },
       }),
       runConnections$({
@@ -665,11 +665,11 @@ function runMachine$(configuration: IConfiguration) {
           const { id, answer } = raw;
           state.answers.get(id as string).resolve(answer);
         },
-        onDataConnectionWorker: async (key, socket, data) => {}, // Not used
+        onDataConnectionWorker: async (key, socket, data) => { }, // Not used
       }),
     ])),
     map(([state, server, connections]) => {
-      const askAll = async (question, data) => {
+      async function askAll(question, data) {
         const results: [string, IData][] = await Promise.all(connections.map(
           async ([key, manager, worker]): Promise<[string, IData]> => {
             const id = getId();
@@ -691,7 +691,7 @@ function runMachine$(configuration: IConfiguration) {
         return results.filter(([key, result]) => !!result);
       }
 
-      const ask = async (question, data) => {
+      async function ask(question, data) {
         let resolved = false;
         let result = await new Promise<[string, IData]>((r, e) => connections.forEach(
           async ([key, manager, worker]) => {
@@ -717,7 +717,7 @@ function runMachine$(configuration: IConfiguration) {
         return result;
       }
 
-      const notify = async (type, data) => {
+      async function notify(type, data) {
         connections.forEach(
           async ([key, manager, worker]) => {
             manager.push(JSON.stringify({
@@ -782,7 +782,7 @@ function runMachine$(configuration: IConfiguration) {
               map
                 .storage
                 .forEach((storage) => {
-                    storage.onFinish();
+                  storage.onFinish();
                 });
 
               map.usedGroups
@@ -800,9 +800,32 @@ function runMachine$(configuration: IConfiguration) {
         }
       };
 
-      state.machineState.send = async (serverKey, data) => {
-        const [, , worker] = connections.find(([key]) => key === serverKey);
-        worker.push(JSON.stringify(data));
+      async function findCanGetStageConnections(
+        stage: string,
+        CAN_GET_STAGE_TIMEOUT = 60000,
+        CAN_GET_STAGE_AWAIT_TIMEOUT = 1000,
+      ) {
+        const startTime = +new Date();
+        let connections: string[] = [];
+        while (!connections.length && startTime + CAN_GET_STAGE_TIMEOUT > +new Date()) {
+          const answers = await askAll(QuestionTypeEnum.CAN_GET_STAGE, {
+            stage,
+          });
+          connections = answers.map(([key, result]) => key);
+          if (!connections.length) {
+            await new Promise(r => setTimeout(r, CAN_GET_STAGE_AWAIT_TIMEOUT));
+          }
+        }
+        return connections;
+      }
+
+      // state.machineState.send = async (serverKey, data) => {
+      //   const [, , worker] = connections.find(([key]) => key === serverKey);
+      //   worker.push(JSON.stringify(data));
+      // };
+
+      state.machineState.onData = async (data) => {
+
       };
 
       return true;
