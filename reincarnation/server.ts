@@ -123,23 +123,25 @@ async function runServer({
   queueLimit?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
 }): Promise<net.Server> {
-  return new Promise((r, e) => makeServer({
-    key,
-    port,
-    hostname,
-    queueDir,
-    queueLimit,
-    onData,
-    onConnect() {
-      r();
-    },
-    onError(error) {
-      e(error);
-    },
-    onClose() {
-      e();
-    },
-  }));
+  return await new Promise<net.Server>((r, e) => {
+    const server = makeServer({
+      key,
+      port,
+      hostname,
+      queueDir,
+      queueLimit,
+      onData,
+      onConnect() {
+        r(server);
+      },
+      onError(error) {
+        e(error);
+      },
+      onClose() {
+        e();
+      },
+    });
+  });
 }
 
 async function runConnection({
@@ -153,21 +155,23 @@ async function runConnection({
   hostname: string;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
 }): Promise<net.Socket> {
-  return new Promise((r, e) => makeConnection({
-    key,
-    port,
-    hostname,
-    onData,
-    onConnect() {
-      r();
-    },
-    onError(error) {
-      e(error);
-    },
-    onClose() {
-      e();
-    },
-  }));
+  return new Promise((r, e) => {
+    const connection = makeConnection({
+      key,
+      port,
+      hostname,
+      onData,
+      onConnect() {
+        r(connection);
+      },
+      onError(error) {
+        e(error);
+      },
+      onClose() {
+        e();
+      },
+    });
+  });
 }
 
 export const retryServerStrategy = <T>({
