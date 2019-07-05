@@ -5,7 +5,7 @@ import {
 } from "./serializationUtil";
 import {
   getPromise,
-} from "./promiseUtil.js";
+} from "./promiseUtil";
 
 const DIR = path.resolve("./queue");
 

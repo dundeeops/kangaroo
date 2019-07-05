@@ -20,7 +20,9 @@ type IStageFunction = [
   () => void
 ] | ((data: IData) => Promise<void>)
 
-type IStage = (key: string, send: (stage: string, key: string, data: IData) => Promise<void>) => Promise<IStageFunction>
+type ISendFn = (stage: string, key: string, data: IData) => Promise<void>;
+
+type IStage = (key: string, send: ISendFn) => Promise<IStageFunction>
 
 interface IStages {
   [key: string]: IStage;
@@ -399,8 +401,6 @@ function runConnections$({
   );
 }
 
-
-
 // function runServerData$({
 //   port,
 //   hostname,
@@ -497,7 +497,7 @@ interface IProcessing {
   processes: number;
   storage: Map<string, IProcessingStorage>;
   usedGroups: string[];
-  usedGroupsTotals: {},
+  usedGroupsTotals: Map<string, number>,
 }
 
 type IProcessingState = Map<string, IProcessing>;
@@ -509,55 +509,9 @@ function getDefaultProcessingMap(): IProcessing {
     processes: 0,
     storage: new Map(),
     usedGroups: [],
-    usedGroupsTotals: {},
+    usedGroupsTotals: new Map(),
   }
 }
-
-// async function send(session, group, stage, key, data) {
-//   const connectionKey = await getSessionStageKeyConnectionScript(
-//       session,
-//       stage,
-//       key,
-//   );
-//   if (!connectionKey || _key === connectionKey + "DISABLED") {
-//       await onData(null, {
-//           session,
-//           group,
-//           stage,
-//           key,
-//           data,
-//       });
-//   } else {
-//       await sendToServer(
-//           connectionKey,
-//           session,
-//           group,
-//           stage,
-//           key,
-//           data,
-//       );
-//   }
-//   return connectionKey;
-// }
-
-// function getSendCatchUsedGroupWrap(group, session) {
-//   return async (stage, key, data) => {
-//     const nextGroup = getHash(group, stage);
-//     setUsedGroup(group, nextGroup);
-//     increaseUsedGroupSend(group, nextGroup);
-//     await send(session, nextGroup, stage, key, data);
-//   };
-// }
-
-// async function getProcessingStorage(group, session, key, mapper): Promise<IProcessingStorage> {
-//   const sendWrap = getSendCatchUsedGroupWrap(group, session);
-//   const mapResult = await mapper(key, sendWrap);
-//   const mapCouple = parseMapperResult(mapResult);
-//   return {
-//     onData: mapCouple[0],
-//     onFinish: mapCouple[1],
-//   };
-// }
 
 enum QuestionTypeEnum {
   GET_SESSION_STAGE_KEY_SERVER = "getSessionStageKeyServer",
@@ -573,14 +527,7 @@ enum NotificationTypeEnum {
 interface IMachineState {
   ask?: (question: QuestionTypeEnum, data: IData) => Promise<IData>;
   notify?: (type: NotificationTypeEnum, data: IData) => Promise<void>;
-  // send?: (workerKey: string, data: {
-  //   session: string;
-  //   group: string;
-  //   stage: string;
-  //   key?: string;
-  //   data: IData;
-  // }) => Promise<void>;
-  onData?: (data: IData) => Promise<void>;
+  onData?: (data: ISendData) => Promise<void>;
 }
 
 interface IConfiguration {
@@ -609,24 +556,42 @@ interface IConfiguration {
   stages: IStages;
 }
 
+interface IConnectionCache {
+  date: number;
+  connections: string[];
+}
+
+interface IConnectionCachePromise {
+  promise: Promise<void>;
+  resolve: Function;
+}
+
+interface ISessionStageKeyCache {
+  connectionKey: string;
+}
+
+interface ISessionStageKeyCachePromise {
+  promise: Promise<void>;
+  resolve: Function;
+}
+
 interface IServerState {
   processingState: IProcessingState;
   machineState: IMachineState;
-  sessionStageKeyCache: Map<string, {
-    connectionKey: string;
-    promise: Promise<void>;
-    resolve: Function;
-  }>;
-  connectionCache: Map<string, {
-    date: number;
-    connections: string[];
-    promise: Promise<void>;
-    resolve: Function;
-  }>;
+  sessionStageKeyCache: Map<string, ISessionStageKeyCache | ISessionStageKeyCachePromise>;
+  connectionCache: Map<string, IConnectionCache | IConnectionCachePromise>;
   answers: Map<string, {
     promise: Promise<void>;
     resolve: Function;
   }>;
+}
+
+interface ISendData extends IDataBase {
+  session: string;
+  group: string;
+  stage: string;
+  key?: string;
+  data: IData;
 }
 
 function runMachine$(configuration: IConfiguration) {
@@ -650,13 +615,13 @@ function runMachine$(configuration: IConfiguration) {
             socket.push(JSON.stringify({
               id,
               answer,
-            }));
+            }) + '\n');
           } else {
             await state.machineState.notify(type as NotificationTypeEnum, data);
           }
         },
         onDataWorker: async (key, socket, data) => {
-          await state.machineState.onData(data);
+          await state.machineState.onData(data as ISendData);
         },
       }),
       runConnections$({
@@ -669,7 +634,7 @@ function runMachine$(configuration: IConfiguration) {
       }),
     ])),
     map(([state, server, connections]) => {
-      async function askAll(question, data) {
+      async function askAll(question: QuestionTypeEnum, data: IData) {
         const results: [string, IData][] = await Promise.all(connections.map(
           async ([key, manager, worker]): Promise<[string, IData]> => {
             const id = getId();
@@ -682,7 +647,7 @@ function runMachine$(configuration: IConfiguration) {
               id,
               question,
               data,
-            }));
+            }) + '\n');
             const answer: IData = await promise;
             state.answers.delete(id);
             return [key, answer];
@@ -691,7 +656,7 @@ function runMachine$(configuration: IConfiguration) {
         return results.filter(([key, result]) => !!result);
       }
 
-      async function ask(question, data) {
+      async function ask(question: QuestionTypeEnum, data: IData) {
         let resolved = false;
         let result = await new Promise<[string, IData]>((r, e) => connections.forEach(
           async ([key, manager, worker]) => {
@@ -705,7 +670,7 @@ function runMachine$(configuration: IConfiguration) {
               id,
               question,
               data,
-            }));
+            }) + '\n');
             const answer = await promise;
             if (answer && !resolved) {
               resolved = true;
@@ -717,13 +682,13 @@ function runMachine$(configuration: IConfiguration) {
         return result;
       }
 
-      async function notify(type, data) {
+      async function notify(type: NotificationTypeEnum, data: IData) {
         connections.forEach(
           async ([key, manager, worker]) => {
             manager.push(JSON.stringify({
               type,
               data,
-            }));
+            }) + '\n');
           }
         );
       }
@@ -744,7 +709,7 @@ function runMachine$(configuration: IConfiguration) {
           case QuestionTypeEnum.GET_SESSION_STAGE_KEY_SERVER:
             const hash = getHash(session, stage, key);
             return state.sessionStageKeyCache.has(hash)
-              && state.sessionStageKeyCache.get(hash).connectionKey;
+              && (state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache).connectionKey;
         }
         return null;
       };
@@ -787,7 +752,7 @@ function runMachine$(configuration: IConfiguration) {
 
               map.usedGroups
                 .forEach((nextGroup) => {
-                  const totalSum = this._processingMap.get(group).usedGroupsTotals[name];
+                  const totalSum = state.processingState.get(group).usedGroupsTotals.get(name);
                   notify(NotificationTypeEnum.NULL_ACHIEVED, {
                     group: nextGroup,
                     totalSum,
@@ -799,6 +764,32 @@ function runMachine$(configuration: IConfiguration) {
             return;
         }
       };
+
+      async function askSessionStageKeyServer(session: string, stage: string, key?: string) {
+        const hash = getHash(session, stage, key);
+        let sessionKeyCache = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache;
+        let sessionKeyCachePromise = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCachePromise;
+        if (sessionKeyCachePromise && sessionKeyCachePromise.promise) {
+          await sessionKeyCachePromise.promise;
+          sessionKeyCache = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache;
+        }
+        if (!sessionKeyCache) {
+          const [promise, resolve] = getPromise();
+          state.sessionStageKeyCache.set(hash, { promise, resolve });
+          const answer = await ask(
+            QuestionTypeEnum.GET_SESSION_STAGE_KEY_SERVER,
+            {
+              session,
+              stage,
+              key,
+            },
+          );
+          sessionKeyCache.connectionKey = answer && answer[1] as string;
+          state.sessionStageKeyCache.set(hash, sessionKeyCache);
+          resolve();
+        }
+        return sessionKeyCache.connectionKey;
+      }
 
       async function findCanGetStageConnections(
         stage: string,
@@ -819,16 +810,219 @@ function runMachine$(configuration: IConfiguration) {
         return connections;
       }
 
-      // state.machineState.send = async (serverKey, data) => {
-      //   const [, , worker] = connections.find(([key]) => key === serverKey);
-      //   worker.push(JSON.stringify(data));
-      // };
+      async function findStageConnection(stage: string) {
+        let connectionCache = state.connectionCache.get(stage) as IConnectionCache;
+        const connectionCachePromise = state.connectionCache.get(stage) as IConnectionCachePromise;
+        if (connectionCachePromise && connectionCachePromise.promise) {
+          await connectionCachePromise.promise;
+          connectionCache = state.connectionCache.get(stage) as IConnectionCache;
+        }
+        if (
+          !connectionCache
+          || ((+new Date()) - connectionCache.date) > 10 * 1000
+          || (connectionCache.connections && !connectionCache.connections.length)
+        ) {
+          const [promise, resolve] = getPromise();
+          state.connectionCache.set(stage, {
+            promise,
+            resolve,
+          });
+          const connections = await findCanGetStageConnections(stage);
+          connectionCache = {
+            date: +new Date(),
+            connections,
+          };
+          state.connectionCache.set(stage, connectionCache);
+          resolve();
+        }
+        if (connectionCache.connections) {
+          return connectionCache.connections[
+            Math.floor(Math.random() * connectionCache.connections.length)
+          ];
+        }
+      }
 
-      state.machineState.onData = async (data) => {
+      async function getSessionStageKeyConnectionScript(session: string, stage: string, key?: string) {
+        let connectionKey;
 
+        if (key) {
+          connectionKey = await askSessionStageKeyServer(session, stage, key);
+        }
+
+        if (!connectionKey) {
+          connectionKey = await findStageConnection(stage);
+        }
+
+        if (key) {
+          const hash = getHash(session, stage, key);
+          state.sessionStageKeyCache.set(hash, { connectionKey });
+        }
+
+        return connectionKey;
+      }
+
+      async function sendToServer(connectionKey, data) {
+        if (!connectionKey) {
+          throw Error("NO_CONNECTIONS_ERROR");
+        }
+        const message = JSON.stringify(data) + '\n';
+        const [, , worker] = connections.find(([key]) => key === connectionKey);
+        return worker.push(message);
+      }
+
+      // async function send({session, group, stage, key, data}) {
+      //   const connectionKey = await getSessionStageKeyConnectionScript(
+      //     session,
+      //     stage,
+      //     key,
+      //   );
+      //   await sendToServer(
+      //     connectionKey,
+      //     session,
+      //     group,
+      //     stage,
+      //     key,
+      //     data,
+      //   );
+      //   return connectionKey;
+      // }
+
+      async function send({ session, group, stage, key, data }: ISendData) {
+        const connectionKey = await getSessionStageKeyConnectionScript(
+          session,
+          stage,
+          key,
+        );
+        const raw = {
+          session,
+          group,
+          stage,
+          key,
+          data,
+        };
+        if (configuration.key
+          && (
+            !connectionKey || configuration.key === connectionKey + "DISABLED"
+          )
+        ) {
+          await state.machineState.onData(raw);
+        } else {
+          await sendToServer(
+            connectionKey,
+            raw
+          );
+        }
+      }
+
+      function checkProcessingMap(group: string) {
+        if (!state.processingState.get(group)) {
+          state.processingState.set(group, getDefaultProcessingMap());
+        }
+      }
+
+      function checkStorageMap(group: string, hash: string) {
+        const processingMap = state.processingState.get(group);
+        if (!processingMap.storage.get(hash)) {
+          processingMap.storage.set(hash, {
+            onData: async () => { },
+            onFinish: async () => { },
+          });
+        }
+      }
+
+      function getMapperScript(stage: string) {
+        let mapper = configuration.stages[stage];
+        return mapper;
+      }
+
+      function parseMapperResult(mapResult): [
+        (data: { stage: string, key?: string, data: IData; eof: boolean }) => Promise<void>,
+        () => Promise<void>
+      ] {
+        if (Array.isArray(mapResult)) {
+          return [mapResult[0], mapResult[1]];
+        } else {
+          return [mapResult, async () => { }];
+        }
+      }
+
+      function setUsedGroup(group: string, nextGroup: string) {
+        if (state.processingState.get(group).usedGroups.indexOf(nextGroup) === -1) {
+          state.processingState.get(group).usedGroups.push(nextGroup);
+        }
+      }
+
+      function increaseUsedGroupSend(group, nextGroup) {
+        if (state.processingState.get(group).usedGroupsTotals[nextGroup] == null) {
+          state.processingState.get(group).usedGroupsTotals[nextGroup] = 0;
+        }
+        state.processingState.get(group).usedGroupsTotals[nextGroup]++;
+      }
+
+      function getSendCatchUsedGroupWrap(group: string, session: string): ISendFn {
+        return async (stage: string, key: string, data: IData) => {
+          const nextGroup = getHash(group, stage);
+          setUsedGroup(group, nextGroup);
+          increaseUsedGroupSend(group, nextGroup);
+          await send({session, group: nextGroup, stage, key, data});
+        };
+      }
+
+      async function buildMap(group: string, session: string, key: string, mapper: IStage): Promise<IProcessingStorage> {
+        const sendWrap = getSendCatchUsedGroupWrap(group, session);
+        const mapResult = await mapper(key, sendWrap);
+        const mapCouple = parseMapperResult(mapResult);
+        return {
+          onData: mapCouple[0],
+          onFinish: mapCouple[1],
+        };
+      }
+
+      async function getStorage(group: string, hash: string, session: string, stage: string, key?: string) {
+        let storage = state.processingState.get(group).storage.get(hash);
+        if (!storage) {
+          const mapper = getMapperScript(stage);
+          storage = await buildMap(group, session, key, mapper);
+        }
+        return storage;
+      }
+
+      state.machineState.onData = async ({ session, group, stage, key, data }: ISendData) => {
+        const hash = getHash(session, stage, key || getId());
+        checkProcessingMap(group);
+        state.processingState.get(group).processed++;
+        state.processingState.get(group).processes++;
+        checkStorageMap(group, hash);
+        const storage = await getStorage(group, hash, session, stage, key);
+        await storage.onData({ stage, key, data, eof: !data });
+        if (!key) {
+          state.processingState.get(group).storage.delete(hash);
+        }
+        const totalSum = state.processingState.get(group).totalSum;
+        state.processingState.get(group).processes--;
+        if (state.processingState.get(group).processes === 0 && totalSum != null) {
+          const processedArray = await askAll(
+            QuestionTypeEnum.COUNT_PROCESSED,
+            {
+              group,
+            },
+          );
+
+          const processed = processedArray
+            .reduce((value, [key, count]: [string, number]) => value + count, 0);
+
+          if (processed === totalSum) {
+            notify(NotificationTypeEnum.END_PROCESSING, {
+              group,
+            });
+          }
+        }
       };
 
-      return true;
+      return [
+        server,
+        connections,
+      ];
     }),
   );
 }
@@ -849,11 +1043,11 @@ runMachine$({
     {
       key: 'local',
       worker: {
-        hostname: '0.0.0.0',
+        hostname: 'localhost',
         port: 3000,
       },
       manager: {
-        hostname: '0.0.0.0',
+        hostname: 'localhost',
         port: 3001,
       },
     }
