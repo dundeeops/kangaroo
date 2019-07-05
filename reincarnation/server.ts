@@ -52,22 +52,15 @@ function makeServer({
   const server = net.createServer(socket => {
     socket
       .pipe(new SplitTransformStream())
-      .pipe(new Writable({
-        async write(line, encoding, next) {
-          next();
-          await onData(key, socket, JSON.parse(line.toString()));
+      .pipe(queueDuplexStream({
+        readableStream: socket,
+        concurrency: 10,
+        dir: queueDir,
+        fn: async (line) => {
+          await onData(key, socket, JSON.parse(line));
         },
+        memoryLimit: queueLimit || 1000,
       }))
-      // .pipe(queueDuplexStream({
-      //   readableStream: socket,
-      //   concurrency: 10,
-      //   dir: queueDir,
-      //   fn: async (line) => {
-      //     console.log(JSON.parse(line));
-      //     await onData(key, socket, JSON.parse(line));
-      //   },
-      //   memoryLimit: queueLimit || 1000,
-      // }))
   });
   server.on("close", () => onClose());
   server.on("error", (error) => onError(error));
@@ -431,7 +424,6 @@ interface IProcessing {
   processed: number;
   processes: number;
   storage: Map<string, IProcessingStorage>;
-  usedGroups: string[];
   usedGroupsTotals: Map<string, number>,
 }
 
@@ -443,7 +435,6 @@ function getDefaultProcessingMap(): IProcessing {
     processed: 0,
     processes: 0,
     storage: new Map(),
-    usedGroups: [],
     usedGroupsTotals: new Map(),
   }
 }
@@ -600,9 +591,11 @@ function runMachine$(configuration: IConfiguration) {
           group: string;
           totalSum: number;
         };
-        const map = group && state.processingState.get(group);
+        let map = group && state.processingState.get(group);
         switch (type) {
           case NotificationTypeEnum.NULL_ACHIEVED:
+            checkProcessingMap(group);
+            map = state.processingState.get(group);
             if (map) {
               map.totalSum = totalSum;
               const processedArray = await askAll(
@@ -625,20 +618,19 @@ function runMachine$(configuration: IConfiguration) {
             return;
           case NotificationTypeEnum.END_PROCESSING:
             if (map) {
-              map
-                .storage
-                .forEach((storage) => {
-                  storage.onFinish();
-                });
+              for (const [hash, storage] of map.storage) {
+                await storage.onFinish();
+              }
 
-              map.usedGroups
-                .forEach((nextGroup) => {
-                  const totalSum = state.processingState.get(group).usedGroupsTotals.get(name);
-                  notify(NotificationTypeEnum.NULL_ACHIEVED, {
+              for (const [nextGroup, totalSum] of map.usedGroupsTotals) {
+                notify(
+                  NotificationTypeEnum.NULL_ACHIEVED,
+                  {
                     group: nextGroup,
                     totalSum,
-                  });
-                });
+                  },
+                );
+              }
 
               state.processingState.delete(group);
             }
@@ -652,7 +644,7 @@ function runMachine$(configuration: IConfiguration) {
         const processingState = state.processingState.get(group);
         processingState.processed++;
         processingState.processes++;
-        const storage = await getStorage(group, hash, session, stage, key);
+        const storage = await getStorage({group, hash, session, stage, key});
         await storage.onData({ stage, key, data });
         if (!key) {
           processingState.storage.delete(hash);
@@ -666,14 +658,15 @@ function runMachine$(configuration: IConfiguration) {
               group,
             },
           );
-
           const processed = processedArray
             .reduce((value, [key, count]: [string, number]) => value + count, 0);
-
           if (processed === totalSum) {
-            notify(NotificationTypeEnum.END_PROCESSING, {
-              group,
-            });
+            notify(
+              NotificationTypeEnum.END_PROCESSING,
+              {
+                group,
+              },
+            );
           }
         }
       };
@@ -742,7 +735,7 @@ function runMachine$(configuration: IConfiguration) {
         );
       }
 
-      async function askSessionStageKeyServer(session: string, stage: string, key?: string) {
+      async function askSessionStageKeyServer(session: string, stage: string, key?: string): Promise<string> {
         const hash = getHash(session, stage, key);
         let sessionKeyCache: ISessionStageKeyCache;
         let sessionKeyCachePromise = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCachePromise;
@@ -765,7 +758,7 @@ function runMachine$(configuration: IConfiguration) {
               key,
             },
           );
-          sessionKeyCache.connectionKey = answer && answer[1] as string;
+          sessionKeyCache.connectionKey = answer ? answer[0] : null;
           if (!sessionKeyCache.connectionKey) {
             const answer = await ask(
               QuestionTypeEnum.CAN_GET_STAGE,
@@ -773,7 +766,7 @@ function runMachine$(configuration: IConfiguration) {
                 stage,
               },
             );
-            sessionKeyCache.connectionKey = answer && answer[1] as string;
+            sessionKeyCache.connectionKey = answer ? answer[0] : null;
           }
           state.sessionStageKeyCache.set(hash, sessionKeyCache);
           resolve();
@@ -832,8 +825,8 @@ function runMachine$(configuration: IConfiguration) {
         }
       }
 
-      async function getSessionStageKeyConnectionScript(session: string, stage: string, key?: string) {
-        let connectionKey;
+      async function getSessionStageKeyConnectionScript(session: string, stage: string, key?: string): Promise<string> {
+        let connectionKey: string;
 
         if (key) {
           connectionKey = await askSessionStageKeyServer(session, stage, key);
@@ -851,13 +844,19 @@ function runMachine$(configuration: IConfiguration) {
         return connectionKey;
       }
 
-      async function sendToServer(connectionKey, data) {
+      function sendToServer(connectionKey: string, data: IData) {
         if (!connectionKey) {
-          throw Error("NO_CONNECTIONS_ERROR");
+          throw Error("NO CONNECTIONS FOUND TO SEND");
         }
         const message = JSON.stringify(data) + '\n';
-        const [key, manager, worker] = connections.find(([key]) => key === connectionKey);
-        return worker.write(message);
+        
+        const connection = connections.find(([key]) => key === connectionKey);
+        if (connection) {
+          const [key, manager, worker] = connection;
+          return worker.write(message);
+        } else {
+          throw Error(`NO CONNECTION FOUND WITH KEY ${connectionKey}`);
+        }
       }
 
       async function send({ session, group, stage, key, data }: ISendData) {
@@ -880,7 +879,7 @@ function runMachine$(configuration: IConfiguration) {
         ) {
           await state.machineState.onData(raw);
         } else {
-          await sendToServer(
+          sendToServer(
             connectionKey,
             raw
           );
@@ -909,30 +908,46 @@ function runMachine$(configuration: IConfiguration) {
         }
       }
 
-      function setUsedGroup(group: string, nextGroup: string) {
-        if (state.processingState.get(group).usedGroups.indexOf(nextGroup) === -1) {
-          state.processingState.get(group).usedGroups.push(nextGroup);
-        }
+      function increaseUsedGroupSend({
+        group,
+        nextGroup,
+      }: {
+        group: string;
+        nextGroup: string;
+      }) {
+        const processingState = state.processingState.get(group);
+        processingState.usedGroupsTotals.set(
+          nextGroup,
+          (processingState.usedGroupsTotals.get(nextGroup) || 0) + 1,
+        );
       }
 
-      function increaseUsedGroupSend(group, nextGroup) {
-        if (state.processingState.get(group).usedGroupsTotals[nextGroup] == null) {
-          state.processingState.get(group).usedGroupsTotals[nextGroup] = 0;
-        }
-        state.processingState.get(group).usedGroupsTotals[nextGroup]++;
-      }
-
-      function getSendCatchUsedGroupWrap(group: string, session: string): ISendFn {
+      function getSendCatchUsedGroupWrap({
+        group,
+        session,
+      }: {
+        group: string;
+        session: string;
+      }): ISendFn {
         return async (stage: string, key: string, data: IData) => {
           const nextGroup = getHash(group, stage);
-          setUsedGroup(group, nextGroup);
-          increaseUsedGroupSend(group, nextGroup);
+          increaseUsedGroupSend({group, nextGroup});
           await send({ session, group: nextGroup, stage, key, data });
         };
       }
 
-      async function buildMap(group: string, session: string, key: string, mapper: IStage): Promise<IProcessingStorage> {
-        const sendWrap = getSendCatchUsedGroupWrap(group, session);
+      async function buildMap({
+        group,
+        key,
+        session,
+        mapper,
+      }: {
+        group: string;
+        session: string;
+        key: string;
+        mapper: IStage;
+      }): Promise<IProcessingStorage> {
+        const sendWrap = getSendCatchUsedGroupWrap({group, session});
         const mapResult = await mapper(key, sendWrap);
         const mapCouple = parseMapperResult(mapResult);
         return {
@@ -941,11 +956,24 @@ function runMachine$(configuration: IConfiguration) {
         };
       }
 
-      async function getStorage(group: string, hash: string, session: string, stage: string, key?: string) {
+      async function getStorage({
+        group,
+        hash,
+        key,
+        session,
+        stage,
+      }: {
+        group: string;
+        hash: string;
+        session: string;
+        stage: string;
+        key?: string;
+      }) {
         let storage = state.processingState.get(group).storage.get(hash);
         if (!storage) {
           const mapper = getMapperScript(stage);
-          storage = await buildMap(group, session, key, mapper);
+          storage = await buildMap({group, session, key, mapper});
+          state.processingState.get(group).storage.set(hash, storage);
         }
         return storage;
       }
@@ -959,7 +987,7 @@ function runMachine$(configuration: IConfiguration) {
           .pipe(new Writable({
             async write(chunk, encoding, callback) {
               totalSum++;
-              // stream.pause();
+              stream.pause();
               await send({
                 session,
                 group,
@@ -968,18 +996,19 @@ function runMachine$(configuration: IConfiguration) {
                 data: chunk.toString(),
               });
               callback(null);
-              // stream.resume();
+              stream.resume();
+            },
+            final(cb) {
+              notify(
+                NotificationTypeEnum.NULL_ACHIEVED,
+                {
+                  group,
+                  totalSum,
+                },
+              );
+              cb();
             }
-          }))
-          .on("end", () => {
-            notify(
-              NotificationTypeEnum.NULL_ACHIEVED,
-              {
-                group,
-                totalSum,
-              },
-            );
-          });
+          }));
       }
       return {
         server,
@@ -989,6 +1018,8 @@ function runMachine$(configuration: IConfiguration) {
     }),
   );
 }
+
+const timeStarted = +new Date();
 
 runMachine$({
   connections: [
@@ -1022,7 +1053,6 @@ runMachine$({
         return [
           async ({ data }) => {
             state = !state;
-            console.log('here 0', data);
             await send("reduce_2_flows", state ? "final" : "final_alt", data);
           },
           () => {
@@ -1033,7 +1063,6 @@ runMachine$({
       reduce_2_flows: async (key, send) => {
         return [
           async ({ data }) => {
-            console.log('here 1', data);
             await send("map", null, data);
           },
           () => {
@@ -1044,7 +1073,6 @@ runMachine$({
       map: async (key, send) => {
         return [
           async ({ data }) => {
-            console.log('here 3', data);
             await send("final_reduce", "final", data);
             // console.log("map", kkk++);
           },
@@ -1055,17 +1083,17 @@ runMachine$({
       },
       final_reduce: async (key) => {
         let sum = 0;
-        const timeStarted = +new Date();
         return [
           async ({ data }) => {
             sum++;
-            console.log("final_reduce", sum);
+            // console.log("final_reduce", sum);
           },
           () => {
             const timePassed = ((+new Date()) - timeStarted) / 1000;
+            const milliseconds = ((+new Date()) - timeStarted) % 1000;
             const minutes = Math.floor(timePassed / 60);
             const seconds = Math.floor(timePassed % 60);
-            console.log('Finished!', sum, `${minutes} min`, `${seconds} sec`);
+            console.log('Finished!', sum, `${minutes} min`, `${seconds} sec`, `${milliseconds} ms`);
           },
         ];
       }
@@ -1073,6 +1101,7 @@ runMachine$({
   }
 }).subscribe(state => {
   console.log(state);
+
   const max = 1000;
   let index = 0;
   state.runStream(
@@ -1086,7 +1115,7 @@ runMachine$({
           this.push(Buffer.from(String(index) + "\n", 'utf8'));
           index++;
         }
-      }
+      },
     }),
   );
 });
