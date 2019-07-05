@@ -16,7 +16,7 @@ interface IDataBase {
 type IData = string | number | boolean | IDataBase | Array<string | number | boolean | IDataBase>;
 
 type IStageFunction = [
-  (data: IData) => Promise<void>,
+  (data: { stage: string, key?: string, data: IData; }) => Promise<void>,
   () => void
 ] | ((data: IData) => Promise<void>)
 
@@ -52,15 +52,22 @@ function makeServer({
   const server = net.createServer(socket => {
     socket
       .pipe(new SplitTransformStream())
-      .pipe(queueDuplexStream({
-        readableStream: socket,
-        concurrency: 10,
-        dir: queueDir,
-        fn: async (line) => {
-          await onData(key, socket, JSON.parse(line));
+      .pipe(new Writable({
+        async write(line, encoding, next) {
+          next();
+          await onData(key, socket, JSON.parse(line.toString()));
         },
-        memoryLimit: queueLimit || 1000,
       }))
+      // .pipe(queueDuplexStream({
+      //   readableStream: socket,
+      //   concurrency: 10,
+      //   dir: queueDir,
+      //   fn: async (line) => {
+      //     console.log(JSON.parse(line));
+      //     await onData(key, socket, JSON.parse(line));
+      //   },
+      //   memoryLimit: queueLimit || 1000,
+      // }))
   });
   server.on("close", () => onClose());
   server.on("error", (error) => onError(error));
@@ -415,7 +422,7 @@ function runConnections$({
 }
 
 interface IProcessingStorage {
-  onData: (data: { stage: string, key?: string, data: IData; eof: boolean }) => Promise<void>;
+  onData: (data: { stage: string, key?: string, data: IData; }) => Promise<void>;
   onFinish: () => Promise<void>
 }
 
@@ -642,9 +649,8 @@ function runMachine$(configuration: IConfiguration) {
         const processingState = state.processingState.get(group);
         processingState.processed++;
         processingState.processes++;
-        // checkStorageMap(group, hash);
         const storage = await getStorage(group, hash, session, stage, key);
-        await storage.onData({ stage, key, data, eof: !data });
+        await storage.onData({ stage, key, data });
         if (!key) {
           processingState.storage.delete(hash);
         }
@@ -728,7 +734,7 @@ function runMachine$(configuration: IConfiguration) {
         );
       }
 
-      async function askSessionStageKeyServer(session: string, stage: string, key?: string) {
+      async function askSessionStageKeyServer(session: string, stage: string, key: string) {
         const hash = getHash(session, stage, key);
         let sessionKeyCache = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache;
         let sessionKeyCachePromise = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCachePromise;
@@ -866,16 +872,6 @@ function runMachine$(configuration: IConfiguration) {
         }
       }
 
-      // function checkStorageMap(group: string, hash: string) {
-      //   const processingMap = state.processingState.get(group);
-      //   if (!processingMap.storage.get(hash)) {
-      //     processingMap.storage.set(hash, {
-      //       onData: async () => { },
-      //       onFinish: async () => { },
-      //     });
-      //   }
-      // }
-
       function getMapperScript(stage: string) {
         let mapper = configuration.server.stages[stage];
         return mapper;
@@ -1003,9 +999,9 @@ runMachine$({
       init: async (key, send) => {
         let state = false;
         return [
-          async (data) => {
+          async ({ data }) => {
             state = !state;
-            console.log('here', data);
+            console.log('here 0', data);
             await send("reduce_2_flows", state ? "final" : "final_alt", data);
           },
           () => {
@@ -1015,7 +1011,8 @@ runMachine$({
       },
       reduce_2_flows: async (key, send) => {
         return [
-          async (data) => {
+          async ({ data }) => {
+            console.log('here 1', data);
             await send("map", null, data);
           },
           () => {
@@ -1025,7 +1022,8 @@ runMachine$({
       },
       map: async (key, send) => {
         return [
-          async (data) => {
+          async ({ data }) => {
+            console.log('here 3', data);
             await send("final_reduce", "final", data);
             // console.log("map", kkk++);
           },
@@ -1038,7 +1036,7 @@ runMachine$({
         let sum = 0;
         const timeStarted = +new Date();
         return [
-          async (data) => {
+          async ({ data }) => {
             sum++;
             console.log("final_reduce", sum);
           },

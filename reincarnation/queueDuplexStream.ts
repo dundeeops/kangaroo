@@ -55,18 +55,18 @@ export const queueDuplexStream = ({
   return new Writable({
     async write(line, encoding, next) {
       readableStream.pause();
+      next();
       await queue.push(line);
       readableStream.resume();
       if (isStopped) {
         isStopped = false;
         startCalculations();
       }
-      next();
     },
   
-    final(done) {
+    async final(done) {
       isStopped = true;
-      queue.preserve();
+      await queue.preserve();
       done();
     }
   });
