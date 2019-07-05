@@ -449,6 +449,7 @@ function getDefaultProcessingMap(): IProcessing {
 }
 
 enum QuestionTypeEnum {
+  GET_STAGE_SERVER = "getStageServer",
   GET_SESSION_STAGE_KEY_SERVER = "getSessionStageKeyServer",
   COUNT_PROCESSED = "countProcessed",
   CAN_GET_STAGE = "canGetStage",
@@ -588,6 +589,8 @@ function runMachine$(configuration: IConfiguration) {
             const hash = getHash(session, stage, key);
             return state.sessionStageKeyCache.has(hash)
               && (state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache).connectionKey;
+          case QuestionTypeEnum.GET_STAGE_SERVER:
+            return !!configuration.server.stages[stage];
         }
         return null;
       };
@@ -699,6 +702,7 @@ function runMachine$(configuration: IConfiguration) {
 
       async function ask(question: QuestionTypeEnum, data: IData) {
         let resolved = false;
+        let count = 0;
         let result = await new Promise<[string, IData]>((r, e) => connections.forEach(
           async ([key, manager, worker]) => {
             const id = getId();
@@ -718,6 +722,10 @@ function runMachine$(configuration: IConfiguration) {
               r([key, answer]);
             }
             state.answers.delete(id);
+            count++;
+            if (count === connections.length && !resolved) {
+              r(null);
+            }
           }
         ));
         return result;
@@ -734,17 +742,21 @@ function runMachine$(configuration: IConfiguration) {
         );
       }
 
-      async function askSessionStageKeyServer(session: string, stage: string, key: string) {
+      async function askSessionStageKeyServer(session: string, stage: string, key?: string) {
         const hash = getHash(session, stage, key);
-        let sessionKeyCache = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache;
+        let sessionKeyCache: ISessionStageKeyCache;
         let sessionKeyCachePromise = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCachePromise;
         if (sessionKeyCachePromise && sessionKeyCachePromise.promise) {
           await sessionKeyCachePromise.promise;
           sessionKeyCache = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache;
         }
+        sessionKeyCache = state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache;
         if (!sessionKeyCache) {
           const [promise, resolve] = getPromise();
           state.sessionStageKeyCache.set(hash, { promise, resolve });
+          sessionKeyCache = {
+            connectionKey: null,
+          };
           const answer = await ask(
             QuestionTypeEnum.GET_SESSION_STAGE_KEY_SERVER,
             {
@@ -754,6 +766,15 @@ function runMachine$(configuration: IConfiguration) {
             },
           );
           sessionKeyCache.connectionKey = answer && answer[1] as string;
+          if (!sessionKeyCache.connectionKey) {
+            const answer = await ask(
+              QuestionTypeEnum.CAN_GET_STAGE,
+              {
+                stage,
+              },
+            );
+            sessionKeyCache.connectionKey = answer && answer[1] as string;
+          }
           state.sessionStageKeyCache.set(hash, sessionKeyCache);
           resolve();
         }
@@ -835,7 +856,7 @@ function runMachine$(configuration: IConfiguration) {
           throw Error("NO_CONNECTIONS_ERROR");
         }
         const message = JSON.stringify(data) + '\n';
-        const [, , worker] = connections.find(([key]) => key === connectionKey);
+        const [key, manager, worker] = connections.find(([key]) => key === connectionKey);
         return worker.write(message);
       }
 
