@@ -6,13 +6,11 @@ import { getPromise, } from "./promiseUtil";
 export const queueDuplexStream = ({
   fn,
   concurrency,
-  readableStream,
   dir,
   memoryLimit,
 }: {
   fn: (line: string) => Promise<void>,
   concurrency: number,
-  readableStream: Readable,
   dir: string;
   memoryLimit: number;
 }) => {
@@ -54,10 +52,8 @@ export const queueDuplexStream = ({
 
   return new Writable({
     async write(line, encoding, next) {
-      readableStream.pause();
       await queue.push(line);
       next();
-      readableStream.resume();
       if (isStopped) {
         isStopped = false;
         startCalculations();

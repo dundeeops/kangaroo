@@ -15,10 +15,12 @@ interface IDataBase {
 
 type IData = string | number | boolean | IDataBase | Array<string | number | boolean | IDataBase>;
 
+type IStageFunctionOnData = (data: { stage: string, key?: string, data: IData; }) => Promise<void>;
+
 type IStageFunction = [
-  (data: { stage: string, key?: string, data: IData; }) => Promise<void>,
+  IStageFunctionOnData,
   () => void
-] | ((data: IData) => Promise<void>)
+] | IStageFunctionOnData
 
 type ISendFn = (stage: string, key: string, data: IData) => Promise<void>;
 
@@ -28,11 +30,125 @@ interface IStages {
   [key: string]: IStage;
 }
 
+interface IProcessingStorage {
+  onData: (data: { stage: string, key?: string, data: IData; }) => Promise<void>;
+  onFinish: () => Promise<void>
+}
+
+interface IProcessing {
+  totalSum?: number;
+  processed: number;
+  processes: number;
+  storage: Map<string, IProcessingStorage>;
+  usedGroupsTotals: Map<string, number>,
+}
+
+type IProcessingState = Map<string, IProcessing>;
+
+interface IMachineState {
+  ask?: (question: QuestionTypeEnum, data: IData) => Promise<IData>;
+  notify?: (type: NotificationTypeEnum, data: IData) => Promise<void>;
+  onData?: (data: ISendData) => Promise<void>;
+}
+
+interface IConfiguration {
+  connections: {
+    key: string;
+    manager: {
+      hostname: string;
+      port: number;
+      maxRetryAttempts?: number;
+      scalingDuration?: number;
+      sleepTimeout?: number;
+    };
+    worker: {
+      hostname: string;
+      port: number;
+      maxRetryAttempts?: number;
+      scalingDuration?: number;
+      sleepTimeout?: number;
+    };
+  }[],
+  server?: {
+    key: string;
+    manager: {
+      hostname: string;
+      port: number;
+      queueDir: string;
+      queueLimit?: number;
+      concurrency?: number;
+      maxRetryAttempts?: number;
+      scalingDuration?: number;
+    },
+    worker: {
+      hostname: string;
+      port: number;
+      queueDir: string;
+      queueLimit?: number;
+      concurrency?: number;
+      maxRetryAttempts?: number;
+      scalingDuration?: number;
+    },
+    stages: IStages;
+  },
+}
+
+interface IConnectionCache {
+  date: number;
+  connections: string[];
+}
+
+interface IConnectionCachePromise {
+  promise: Promise<void>;
+  resolve: Function;
+}
+
+interface ISessionStageKeyCache {
+  connectionKey: string;
+}
+
+interface ISessionStageKeyCachePromise {
+  promise: Promise<void>;
+  resolve: Function;
+}
+
+interface IServerState {
+  processingState: IProcessingState;
+  machineState: IMachineState;
+  sessionStageKeyCache: Map<string, ISessionStageKeyCache | ISessionStageKeyCachePromise>;
+  connectionCache: Map<string, IConnectionCache | IConnectionCachePromise>;
+  answers: Map<string, {
+    promise: Promise<void>;
+    resolve: Function;
+  }>;
+}
+
+interface ISendData extends IDataBase {
+  session: string;
+  group: string;
+  stage: string;
+  key?: string;
+  data: IData;
+}
+
+enum QuestionTypeEnum {
+  GET_STAGE_SERVER = "getStageServer",
+  GET_SESSION_STAGE_KEY_SERVER = "getSessionStageKeyServer",
+  COUNT_PROCESSED = "countProcessed",
+  CAN_GET_STAGE = "canGetStage",
+}
+
+enum NotificationTypeEnum {
+  END_PROCESSING = "endProcessing",
+  NULL_ACHIEVED = "nullAchieved",
+}
+
 function makeServer({
   key,
   port,
   hostname,
   queueDir,
+  concurrency,
   queueLimit,
   onData,
   onConnect,
@@ -44,6 +160,7 @@ function makeServer({
   hostname: string;
   queueDir: string;
   queueLimit?: number;
+  concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
   onConnect: Function;
   onError: Function;
@@ -53,8 +170,7 @@ function makeServer({
     socket
       .pipe(new SplitTransformStream())
       .pipe(queueDuplexStream({
-        readableStream: socket,
-        concurrency: 10,
+        concurrency: concurrency || 10,
         dir: queueDir,
         fn: async (line) => {
           await onData(key, socket, JSON.parse(line));
@@ -114,6 +230,7 @@ async function runServer({
   hostname,
   queueDir,
   queueLimit,
+  concurrency,
   onData,
 }: {
   key: string;
@@ -121,6 +238,7 @@ async function runServer({
   hostname: string;
   queueDir: string;
   queueLimit?: number;
+  concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
 }): Promise<net.Server> {
   return await new Promise<net.Server>((r, e) => {
@@ -130,6 +248,7 @@ async function runServer({
       hostname,
       queueDir,
       queueLimit,
+      concurrency,
       onData,
       onConnect() {
         r(server);
@@ -183,8 +302,8 @@ export const retryStrategy = <T>({
   scalingDuration?: number,
   message?: (retryAttempt: number, retryDuration: number) => string;
 } = {}) => (attempts: Observable<T>) => attempts.pipe(
-  mergeMap((error, i) => {
-    const retryAttempt = i + 1;
+  mergeMap((error, attemptCount) => {
+    const retryAttempt = attemptCount + 1;
     console.error(error);
     if (retryAttempt > maxRetryAttempts) {
       return throwError(error);
@@ -198,24 +317,31 @@ export const retryStrategy = <T>({
   }),
 );
 
-function runDomain$<T>(
-  run: () => Promise<T>,
-  message?: (retryAttempt: number, retryDuration: number) => string,
-) {
+function runDomain$<T>({
+  run,
+  message,
+  maxRetryAttempts,
+  scalingDuration,
+}: {
+  run: () => Promise<T>;
+  message?: (retryAttempt: number, retryDuration: number) => string;
+  maxRetryAttempts?: number;
+  scalingDuration?: number;
+}) {
   return of(domain.create()).pipe(
     tap(scope => scope.on("error", error => {
       throw error;
     })),
-    mergeMap(d => from(new Promise<T>((r) => {
-      d.run(async () => {
+    mergeMap(scope => from(new Promise<T>((r) => {
+      scope.run(async () => {
         const result = await run();
         r(result);
       });
     })).pipe(
       retryWhen(
         retryStrategy<T>({
-          maxRetryAttempts: 3,
-          scalingDuration: 1000,
+          maxRetryAttempts: maxRetryAttempts || 3,
+          scalingDuration: scalingDuration || 1000,
           message,
         }),
       ),
@@ -229,26 +355,35 @@ function runDomainServer$({
   hostname,
   queueDir,
   queueLimit,
+  concurrency,
   onData,
+  maxRetryAttempts,
+  scalingDuration,
 }: {
   key: string;
   port: number;
   hostname: string;
   queueDir: string;
   queueLimit?: number;
+  concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  maxRetryAttempts?: number;
+  scalingDuration?: number;
 }) {
-  return runDomain$(
-    async () => await runServer({
+  return runDomain$({
+    run: async () => await runServer({
       key,
       hostname,
       port,
       queueDir,
       queueLimit,
+      concurrency,
       onData,
     }),
-    (retryAttempt, retryDuration) => `[Server ${key} - ${hostname}:${port}] Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`,
-  );
+    message: (retryAttempt, retryDuration) => `[Server ${key} - ${hostname}:${port}] Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`,
+    maxRetryAttempts,
+    scalingDuration,
+  });
 }
 
 function runServer$({
@@ -257,14 +392,20 @@ function runServer$({
   hostname,
   queueDir,
   queueLimit,
+  concurrency,
   onData,
+  maxRetryAttempts,
+  scalingDuration,
 }: {
   key: string;
   port: number;
   hostname: string;
   queueDir: string;
   queueLimit?: number;
+  concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  maxRetryAttempts?: number;
+  scalingDuration?: number;
 }) {
   return runDomainServer$({
     key,
@@ -272,7 +413,10 @@ function runServer$({
     port,
     queueDir,
     queueLimit,
+    concurrency,
     onData,
+    maxRetryAttempts,
+    scalingDuration,
   }).pipe(
     distinct(),
   );
@@ -283,11 +427,17 @@ function runConnection$({
   port,
   hostname,
   onData,
+  maxRetryAttempts,
+  scalingDuration,
+  sleepTimeout,
 }: {
   key: string;
   port: number;
   hostname: string;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  maxRetryAttempts?: number;
+  scalingDuration?: number;
+  sleepTimeout?: number;
 }) {
   const connection$ = from(
     runConnection({
@@ -299,8 +449,8 @@ function runConnection$({
   ).pipe(
     retryWhen(
       retryStrategy({
-        maxRetryAttempts: 3,
-        scalingDuration: 1000,
+        maxRetryAttempts: maxRetryAttempts || 3,
+        scalingDuration: scalingDuration || 1000,
         message: (retryAttempt, retryDuration) => `[Connection ${key} - ${hostname}:${port}] Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`
       }),
     ),
@@ -314,7 +464,7 @@ function runConnection$({
       if (!!connection) {
         return of(connection);
       } else {
-        return timer(10000).pipe(
+        return timer(sleepTimeout || 10000).pipe(
           concatMap(() => connection$),
         )
       }
@@ -333,11 +483,17 @@ function runPairConnection$({
     port: number;
     hostname: string;
     onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+    maxRetryAttempts?: number;
+    scalingDuration?: number;
+    sleepTimeout?: number;
   };
   manager: {
     port: number;
     hostname: string;
     onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+    maxRetryAttempts?: number;
+    scalingDuration?: number;
+    sleepTimeout?: number;
   }
 }) {
   return combineLatest([
@@ -362,12 +518,18 @@ function runPairServer$({
     hostname: string;
     queueDir: string;
     queueLimit?: number;
+    concurrency?: number;
+    maxRetryAttempts?: number;
+    scalingDuration?: number;
   };
   manager: {
     port: number;
     hostname: string;
     queueDir: string;
     queueLimit?: number;
+    concurrency?: number;
+    maxRetryAttempts?: number;
+    scalingDuration?: number;
   }
 }) {
   return combineLatest([
@@ -388,10 +550,16 @@ function runConnections$({
     manager: {
       port: number;
       hostname: string;
+      maxRetryAttempts?: number;
+      scalingDuration?: number;
+      sleepTimeout?: number;
     };
     worker: {
       port: number;
       hostname: string;
+      maxRetryAttempts?: number;
+      scalingDuration?: number;
+      sleepTimeout?: number;
     };
   }[];
 }) {
@@ -414,21 +582,6 @@ function runConnections$({
   );
 }
 
-interface IProcessingStorage {
-  onData: (data: { stage: string, key?: string, data: IData; }) => Promise<void>;
-  onFinish: () => Promise<void>
-}
-
-interface IProcessing {
-  totalSum?: number;
-  processed: number;
-  processes: number;
-  storage: Map<string, IProcessingStorage>;
-  usedGroupsTotals: Map<string, number>,
-}
-
-type IProcessingState = Map<string, IProcessing>;
-
 function getDefaultProcessingMap(): IProcessing {
   return {
     totalSum: null,
@@ -437,90 +590,6 @@ function getDefaultProcessingMap(): IProcessing {
     storage: new Map(),
     usedGroupsTotals: new Map(),
   }
-}
-
-enum QuestionTypeEnum {
-  GET_STAGE_SERVER = "getStageServer",
-  GET_SESSION_STAGE_KEY_SERVER = "getSessionStageKeyServer",
-  COUNT_PROCESSED = "countProcessed",
-  CAN_GET_STAGE = "canGetStage",
-}
-
-enum NotificationTypeEnum {
-  END_PROCESSING = "endProcessing",
-  NULL_ACHIEVED = "nullAchieved",
-}
-
-interface IMachineState {
-  ask?: (question: QuestionTypeEnum, data: IData) => Promise<IData>;
-  notify?: (type: NotificationTypeEnum, data: IData) => Promise<void>;
-  onData?: (data: ISendData) => Promise<void>;
-}
-
-interface IConfiguration {
-  connections: {
-    key: string;
-    manager: {
-      hostname: string;
-      port: number;
-    };
-    worker: {
-      hostname: string;
-      port: number;
-    };
-  }[],
-  server?: {
-    key: string;
-    manager: {
-      hostname: string;
-      port: number;
-      queueDir: string;
-    },
-    worker: {
-      hostname: string;
-      port: number;
-      queueDir: string;
-    },
-    stages: IStages;
-  },
-}
-
-interface IConnectionCache {
-  date: number;
-  connections: string[];
-}
-
-interface IConnectionCachePromise {
-  promise: Promise<void>;
-  resolve: Function;
-}
-
-interface ISessionStageKeyCache {
-  connectionKey: string;
-}
-
-interface ISessionStageKeyCachePromise {
-  promise: Promise<void>;
-  resolve: Function;
-}
-
-interface IServerState {
-  processingState: IProcessingState;
-  machineState: IMachineState;
-  sessionStageKeyCache: Map<string, ISessionStageKeyCache | ISessionStageKeyCachePromise>;
-  connectionCache: Map<string, IConnectionCache | IConnectionCachePromise>;
-  answers: Map<string, {
-    promise: Promise<void>;
-    resolve: Function;
-  }>;
-}
-
-interface ISendData extends IDataBase {
-  session: string;
-  group: string;
-  stage: string;
-  key?: string;
-  data: IData;
 }
 
 function runMachine$(configuration: IConfiguration) {
@@ -559,7 +628,7 @@ function runMachine$(configuration: IConfiguration) {
           const { id, answer } = raw;
           state.answers.get(id as string).resolve(answer);
         },
-        onDataConnectionWorker: async (key, socket, data) => { }, // Not used
+        onDataConnectionWorker: async (key, socket, data) => { },
       }),
     ])),
     map(([state, server, connections]) => {
@@ -987,7 +1056,6 @@ function runMachine$(configuration: IConfiguration) {
           .pipe(new Writable({
             async write(chunk, encoding, callback) {
               totalSum++;
-              stream.pause();
               await send({
                 session,
                 group,
@@ -996,7 +1064,6 @@ function runMachine$(configuration: IConfiguration) {
                 data: chunk.toString(),
               });
               callback(null);
-              stream.resume();
             },
             final(cb) {
               notify(
@@ -1049,16 +1116,11 @@ runMachine$({
     },
     stages: {
       init: async (key, send) => {
-        let state = false;
-        return [
-          async ({ data }) => {
-            state = !state;
-            await send("reduce_2_flows", state ? "final" : "final_alt", data);
-          },
-          () => {
-            // console.log('Finished! init');
-          },
-        ];
+        let state = Math.random() > 0.5;
+        return async ({ data }) => {
+          state = !state;
+          await send("reduce_2_flows", state ? "final" : "final_alt", data);
+        };
       },
       reduce_2_flows: async (key, send) => {
         return [
@@ -1071,15 +1133,9 @@ runMachine$({
         ];
       },
       map: async (key, send) => {
-        return [
-          async ({ data }) => {
-            await send("final_reduce", "final", data);
-            // console.log("map", kkk++);
-          },
-          () => {
-            // console.log('Finished map!');
-          },
-        ];
+        return async ({ data }) => {
+          await send("final_reduce", "final", data);
+        };
       },
       final_reduce: async (key) => {
         let sum = 0;
@@ -1102,7 +1158,7 @@ runMachine$({
 }).subscribe(state => {
   console.log(state);
 
-  const max = 1000;
+  const max = 10000;
   let index = 0;
   state.runStream(
     "init",
