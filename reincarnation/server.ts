@@ -4,7 +4,7 @@ import net from "net";
 import domain from "domain";
 import path from "path";
 import { SplitTransformStream } from "./splitTransformStream";
-import { Writable } from "stream";
+import { Readable, Writable } from "stream";
 import { getHash, getId } from "./serializationUtil";
 import { queueDuplexStream } from "./queueDuplexStream";
 import { getPromise } from "./promiseUtil";
@@ -414,91 +414,6 @@ function runConnections$({
   );
 }
 
-// function runServerData$({
-//   port,
-//   hostname,
-//   queueDir,
-// }: {
-//   port: number;
-//   hostname: string;
-//   queueDir: string;
-// }) {
-//   return new Observable<{
-//     socket: net.Socket;
-//     data: IData;
-//   }>(o => {
-//     const server$ = runServer$({
-//       hostname,
-//       port,
-//       queueDir,
-//       onData: async (socket, data) => {
-//         o.next({
-//           socket, data,
-//         })
-//       },
-//     }).subscribe({
-//       error(error) {
-//         o.error(error);
-//       },
-//       complete() {
-//         o.complete();
-//       },
-//     });
-//     o.add(() => server$.unsubscribe());
-//   });
-// }
-
-// function convertCallbackData$<T>(
-//   observable: (callback: (onCallbackData: () => Promise<T>) => Promise<void>) => Observable<any>
-// ) {
-//   return new Observable<T>(o => {
-//     const observable$ = observable(
-//       async (onCallbackData) => {
-//         o.next(await onCallbackData());
-//       }
-//     ).subscribe({
-//       error(error) {
-//         o.error(error);
-//       },
-//       complete() {
-//         o.complete();
-//       },
-//     });
-//     o.add(() => observable$.unsubscribe());
-//   });
-// }
-
-// function runWorkerData$({
-//   port,
-//   hostname,
-//   stages,
-// }: {
-//   port: number;
-//   hostname: string;
-//   stages: IStages;
-// }) {
-//   return convertCallbackData$<{
-//     socket: net.Socket;
-//     data: IData;
-//   }>(cb => runServer$({
-//     hostname,
-//     port,
-//     queueDir: path.resolve("./data_queue"),
-//     onData: async (socket, data) => await cb(
-//       async () => {
-//         return {
-//           socket,
-//           data,
-//         }
-//       }
-//     )
-//   })).pipe(
-//     tap(({ socket, data }) => {
-//       console.log(data);
-//     })
-//   );
-// }
-
 interface IProcessingStorage {
   onData: (data: { stage: string, key?: string, data: IData; eof: boolean }) => Promise<void>;
   onFinish: () => Promise<void>
@@ -544,17 +459,6 @@ interface IMachineState {
 }
 
 interface IConfiguration {
-  key: string;
-  manager: {
-    hostname: string;
-    port: number;
-    queueDir: string;
-  },
-  worker: {
-    hostname: string;
-    port: number;
-    queueDir: string;
-  },
   connections: {
     key: string;
     manager: {
@@ -566,7 +470,20 @@ interface IConfiguration {
       port: number;
     };
   }[],
-  stages: IStages;
+  server?: {
+    key: string;
+    manager: {
+      hostname: string;
+      port: number;
+      queueDir: string;
+    },
+    worker: {
+      hostname: string;
+      port: number;
+      queueDir: string;
+    },
+    stages: IStages;
+  },
 }
 
 interface IConnectionCache {
@@ -617,10 +534,10 @@ function runMachine$(configuration: IConfiguration) {
   }).pipe(
     mergeMap(state => combineLatest([
       of(state),
-      runPairServer$({
-        key: configuration.key,
-        manager: configuration.manager,
-        worker: configuration.worker,
+      configuration.server ? runPairServer$({
+        key: configuration.server.key,
+        manager: configuration.server.manager,
+        worker: configuration.server.worker,
         onDataManager: async (key, socket, raw: IDataBase) => {
           const { id, question, type, data } = raw;
           if (id) {
@@ -636,7 +553,7 @@ function runMachine$(configuration: IConfiguration) {
         onDataWorker: async (key, socket, data) => {
           await state.machineState.onData(data as ISendData);
         },
-      }),
+      }) : of<net.Server>(null),
       runConnections$({
         connections: configuration.connections,
         onDataConnectionManager: async (key, socket, raw: IDataBase) => {
@@ -656,7 +573,7 @@ function runMachine$(configuration: IConfiguration) {
         };
         switch (question) {
           case QuestionTypeEnum.CAN_GET_STAGE:
-            return Object.keys(configuration.stages).includes(stage);
+            return Object.keys(configuration.server.stages).includes(stage);
           case QuestionTypeEnum.COUNT_PROCESSED:
             const map = state.processingState.get(group);
             return map ? map.processed : 0;
@@ -916,23 +833,6 @@ function runMachine$(configuration: IConfiguration) {
         return worker.push(message);
       }
 
-      // async function send({session, group, stage, key, data}) {
-      //   const connectionKey = await getSessionStageKeyConnectionScript(
-      //     session,
-      //     stage,
-      //     key,
-      //   );
-      //   await sendToServer(
-      //     connectionKey,
-      //     session,
-      //     group,
-      //     stage,
-      //     key,
-      //     data,
-      //   );
-      //   return connectionKey;
-      // }
-
       async function send({ session, group, stage, key, data }: ISendData) {
         const connectionKey = await getSessionStageKeyConnectionScript(
           session,
@@ -946,9 +846,9 @@ function runMachine$(configuration: IConfiguration) {
           key,
           data,
         };
-        if (configuration.key
+        if (configuration.server && configuration.server.key
           && (
-            !connectionKey || configuration.key === connectionKey + "DISABLED"
+            !connectionKey || configuration.server.key === connectionKey + "DISABLED"
           )
         ) {
           await state.machineState.onData(raw);
@@ -977,7 +877,7 @@ function runMachine$(configuration: IConfiguration) {
       }
 
       function getMapperScript(stage: string) {
-        let mapper = configuration.stages[stage];
+        let mapper = configuration.server.stages[stage];
         return mapper;
       }
 
@@ -1010,7 +910,7 @@ function runMachine$(configuration: IConfiguration) {
           const nextGroup = getHash(group, stage);
           setUsedGroup(group, nextGroup);
           increaseUsedGroupSend(group, nextGroup);
-          await send({session, group: nextGroup, stage, key, data});
+          await send({ session, group: nextGroup, stage, key, data });
         };
       }
 
@@ -1033,26 +933,47 @@ function runMachine$(configuration: IConfiguration) {
         return storage;
       }
 
-      return [
+      function runStream(stage: string, key: string, stream: Readable) {
+        const session = getId();
+        const group = getHash(session, stage);
+        let totalSum = 0;
+        return stream
+          .pipe(new SplitTransformStream())
+          .pipe(new Writable({
+            async write(chunk, encoding, callback) {
+              totalSum++;
+              stream.pause();
+              await send({
+                session,
+                group,
+                stage,
+                key,
+                data: chunk.toString(),
+              });
+              callback(null);
+              stream.resume();
+            }
+          }))
+          .on("end", () => {
+            notify(
+              NotificationTypeEnum.NULL_ACHIEVED,
+              {
+                group,
+                totalSum,
+              },
+            );
+          });
+      }
+      return {
         server,
         connections,
-      ];
+        runStream,
+      };
     }),
   );
 }
 
 runMachine$({
-  key: 'local',
-  worker: {
-    hostname: '0.0.0.0',
-    port: 3000,
-    queueDir: path.resolve("./data_queue"),
-  },
-  manager: {
-    hostname: '0.0.0.0',
-    port: 3001,
-    queueDir: path.resolve("./manager_queue"),
-  },
   connections: [
     {
       key: 'local',
@@ -1066,57 +987,86 @@ runMachine$({
       },
     }
   ],
-  stages: {
-    init: async (key, send) => {
-      let state = false;
-      return [
-        async (data) => {
-          state = !state;
-          await send("reduce_2_flows", state ? "final" : "final_alt", data);
-        },
-        () => {
-          // console.log('Finished! init');
-        },
-      ];
+  server: {
+    key: 'local',
+    worker: {
+      hostname: '0.0.0.0',
+      port: 3000,
+      queueDir: path.resolve("./data_queue"),
     },
-    reduce_2_flows: async (key, send) => {
-      return [
-        async (data) => {
-          await send("map", null, data);
-        },
-        () => {
-          console.log('Finished 2 flows!');
-        },
-      ];
+    manager: {
+      hostname: '0.0.0.0',
+      port: 3001,
+      queueDir: path.resolve("./manager_queue"),
     },
-    map: async (key, send) => {
-      return [
-        async (data) => {
-          await send("final_reduce", "final", data);
-          // console.log("map", kkk++);
-        },
-        () => {
-          // console.log('Finished map!');
-        },
-      ];
-    },
-    final_reduce: async (key) => {
-      let sum = 0;
-      const timeStarted = +new Date();
-      return [
-        async (data) => {
-          sum++;
-          console.log("final_reduce", sum);
-        },
-        () => {
-          const timePassed = ((+new Date()) - timeStarted) / 1000;
-          const minutes = Math.floor(timePassed / 60);
-          const seconds = Math.floor(timePassed % 60);
-          console.log('Finished!', sum, `${minutes} min`, `${seconds} sec`);
-        },
-      ];
+    stages: {
+      init: async (key, send) => {
+        let state = false;
+        return [
+          async (data) => {
+            state = !state;
+            await send("reduce_2_flows", state ? "final" : "final_alt", data);
+          },
+          () => {
+            // console.log('Finished! init');
+          },
+        ];
+      },
+      reduce_2_flows: async (key, send) => {
+        return [
+          async (data) => {
+            await send("map", null, data);
+          },
+          () => {
+            console.log('Finished 2 flows!');
+          },
+        ];
+      },
+      map: async (key, send) => {
+        return [
+          async (data) => {
+            await send("final_reduce", "final", data);
+            // console.log("map", kkk++);
+          },
+          () => {
+            // console.log('Finished map!');
+          },
+        ];
+      },
+      final_reduce: async (key) => {
+        let sum = 0;
+        const timeStarted = +new Date();
+        return [
+          async (data) => {
+            sum++;
+            console.log("final_reduce", sum);
+          },
+          () => {
+            const timePassed = ((+new Date()) - timeStarted) / 1000;
+            const minutes = Math.floor(timePassed / 60);
+            const seconds = Math.floor(timePassed % 60);
+            console.log('Finished!', sum, `${minutes} min`, `${seconds} sec`);
+          },
+        ];
+      }
     }
   }
 }).subscribe(state => {
   console.log(state);
+  const max = 1000;
+  let index = 0;
+  state.runStream(
+    "init",
+    null,
+    new Readable({
+      read() {
+        if (max <= index) {
+          this.push(null);
+        } else {
+          this.push(Buffer.from(String(index) + "\n", 'utf8'));
+          index++;
+        }
+      }
+    }),
+  );
 });
