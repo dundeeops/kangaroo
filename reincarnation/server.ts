@@ -1,5 +1,5 @@
 import { of, from, timer, Observable, throwError, combineLatest } from "rxjs";
-import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share, concat, concatMap, find } from "rxjs/operators";
+import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share, concat, concatMap, find, catchError, expand } from "rxjs/operators";
 import net from "net";
 import domain from "domain";
 import path from "path";
@@ -174,12 +174,14 @@ async function runConnection({
   });
 }
 
-export const retryServerStrategy = <T>({
+export const retryStrategy = <T>({
   maxRetryAttempts = 3,
   scalingDuration = 1000,
+  message = (retryAttempt, retryDuration) => `Attempt ${retryAttempt}: retrying in ${retryDuration}ms`
 }: {
   maxRetryAttempts?: number,
   scalingDuration?: number,
+  message?: (retryAttempt: number, retryDuration: number) => string;
 } = {}) => (attempts: Observable<T>) => attempts.pipe(
   mergeMap((error, i) => {
     const retryAttempt = i + 1;
@@ -188,7 +190,9 @@ export const retryServerStrategy = <T>({
       return throwError(error);
     }
     console.error(
-      `Attempt ${retryAttempt}: retrying in ${retryAttempt * scalingDuration}ms`
+      message
+        ? message(retryAttempt, retryAttempt * scalingDuration)
+        : `Attempt ${retryAttempt}: retrying in ${retryAttempt * scalingDuration}ms`
     );
     return timer(retryAttempt * scalingDuration);
   }),
@@ -206,7 +210,7 @@ function runDomain$<T>(run: () => Promise<T>) {
       });
     })).pipe(
       retryWhen(
-        retryServerStrategy<T>({
+        retryStrategy<T>({
           maxRetryAttempts: 3,
           scalingDuration: 1000,
         }),
@@ -267,28 +271,6 @@ function runServer$({
   });
 }
 
-export const retryConnectionStrategy = <T>({
-  maxRetryAttempts = 3,
-  scalingDuration = 1000,
-  timeout = 30000,
-}: {
-  maxRetryAttempts?: number,
-  scalingDuration?: number,
-  timeout?: number,
-} = {}) => (attempts: Observable<T>) => attempts.pipe(
-  mergeMap((error, i) => {
-    const retryAttempt = i + 1;
-    console.error(error);
-    if (retryAttempt % maxRetryAttempts === 0) {
-      return timer(timeout);
-    }
-    console.error(
-      `Attempt ${retryAttempt}: retrying to reconnect in ${retryAttempt * scalingDuration}ms`
-    );
-    return timer(retryAttempt * scalingDuration);
-  }),
-);
-
 function runConnection$({
   key,
   port,
@@ -300,7 +282,7 @@ function runConnection$({
   hostname: string;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
 }) {
-  return from(
+  const connection$ = from(
     runConnection({
       key,
       port,
@@ -309,13 +291,28 @@ function runConnection$({
     }),
   ).pipe(
     retryWhen(
-      retryConnectionStrategy({
+      retryStrategy({
         maxRetryAttempts: 3,
         scalingDuration: 1000,
-        timeout: 30000,
+        message: (retryAttempt, retryDuration) => `Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`
       }),
     ),
+    catchError(() => {
+      return of<net.Socket>(null);
+    }),
   );
+
+  return connection$.pipe(
+    expand(connection => {
+      if (connection) {
+        return of(connection);
+      } else {
+        return timer(10000).pipe(
+          concatMap(() => connection$),
+        )
+      }
+    })
+  )
 }
 
 function runPairConnection$({
@@ -402,6 +399,10 @@ function runConnections$({
         onData: onDataConnectionWorker,
       },
     }))
+  ).pipe(
+    map(connections => connections.filter(
+      ([key, manager, worker]) => !!manager && !!worker),
+    ),
   );
 }
 
@@ -638,65 +639,6 @@ function runMachine$(configuration: IConfiguration) {
       }),
     ])),
     map(([state, server, connections]) => {
-      async function askAll(question: QuestionTypeEnum, data: IData) {
-        const results: [string, IData][] = await Promise.all(connections.map(
-          async ([key, manager, worker]): Promise<[string, IData]> => {
-            const id = getId();
-            const [promise, resolve] = getPromise();
-            state.answers.set(id, {
-              promise,
-              resolve,
-            })
-            manager.push(JSON.stringify({
-              id,
-              question,
-              data,
-            }) + '\n');
-            const answer: IData = await promise;
-            state.answers.delete(id);
-            return [key, answer];
-          }
-        ));
-        return results.filter(([key, result]) => !!result);
-      }
-
-      async function ask(question: QuestionTypeEnum, data: IData) {
-        let resolved = false;
-        let result = await new Promise<[string, IData]>((r, e) => connections.forEach(
-          async ([key, manager, worker]) => {
-            const id = getId();
-            const [promise, resolve] = getPromise();
-            state.answers.set(id, {
-              promise,
-              resolve,
-            });
-            manager.push(JSON.stringify({
-              id,
-              question,
-              data,
-            }) + '\n');
-            const answer = await promise;
-            if (answer && !resolved) {
-              resolved = true;
-              r([key, answer]);
-            }
-            state.answers.delete(id);
-          }
-        ));
-        return result;
-      }
-
-      async function notify(type: NotificationTypeEnum, data: IData) {
-        connections.forEach(
-          async ([key, manager, worker]) => {
-            manager.push(JSON.stringify({
-              type,
-              data,
-            }) + '\n');
-          }
-        );
-      }
-
       state.machineState.ask = async (question, data) => {
         const { session, stage, group, key } = data as {
           session: string;
@@ -768,6 +710,97 @@ function runMachine$(configuration: IConfiguration) {
             return;
         }
       };
+
+      state.machineState.onData = async ({ session, group, stage, key, data }: ISendData) => {
+        const hash = getHash(session, stage, key || getId());
+        checkProcessingMap(group);
+        state.processingState.get(group).processed++;
+        state.processingState.get(group).processes++;
+        checkStorageMap(group, hash);
+        const storage = await getStorage(group, hash, session, stage, key);
+        await storage.onData({ stage, key, data, eof: !data });
+        if (!key) {
+          state.processingState.get(group).storage.delete(hash);
+        }
+        const totalSum = state.processingState.get(group).totalSum;
+        state.processingState.get(group).processes--;
+        if (state.processingState.get(group).processes === 0 && totalSum != null) {
+          const processedArray = await askAll(
+            QuestionTypeEnum.COUNT_PROCESSED,
+            {
+              group,
+            },
+          );
+
+          const processed = processedArray
+            .reduce((value, [key, count]: [string, number]) => value + count, 0);
+
+          if (processed === totalSum) {
+            notify(NotificationTypeEnum.END_PROCESSING, {
+              group,
+            });
+          }
+        }
+      };
+
+      async function askAll(question: QuestionTypeEnum, data: IData) {
+        const results: [string, IData][] = await Promise.all(connections.map(
+          async ([key, manager, worker]): Promise<[string, IData]> => {
+            const id = getId();
+            const [promise, resolve] = getPromise();
+            state.answers.set(id, {
+              promise,
+              resolve,
+            })
+            manager.push(JSON.stringify({
+              id,
+              question,
+              data,
+            }) + '\n');
+            const answer: IData = await promise;
+            state.answers.delete(id);
+            return [key, answer];
+          }
+        ));
+        return results.filter(([key, result]) => !!result);
+      }
+
+      async function ask(question: QuestionTypeEnum, data: IData) {
+        let resolved = false;
+        let result = await new Promise<[string, IData]>((r, e) => connections.forEach(
+          async ([key, manager, worker]) => {
+            const id = getId();
+            const [promise, resolve] = getPromise();
+            state.answers.set(id, {
+              promise,
+              resolve,
+            });
+            manager.push(JSON.stringify({
+              id,
+              question,
+              data,
+            }) + '\n');
+            const answer = await promise;
+            if (answer && !resolved) {
+              resolved = true;
+              r([key, answer]);
+            }
+            state.answers.delete(id);
+          }
+        ));
+        return result;
+      }
+
+      async function notify(type: NotificationTypeEnum, data: IData) {
+        connections.forEach(
+          async ([key, manager, worker]) => {
+            manager.push(JSON.stringify({
+              type,
+              data,
+            }) + '\n');
+          }
+        );
+      }
 
       async function askSessionStageKeyServer(session: string, stage: string, key?: string) {
         const hash = getHash(session, stage, key);
@@ -990,38 +1023,6 @@ function runMachine$(configuration: IConfiguration) {
         }
         return storage;
       }
-
-      state.machineState.onData = async ({ session, group, stage, key, data }: ISendData) => {
-        const hash = getHash(session, stage, key || getId());
-        checkProcessingMap(group);
-        state.processingState.get(group).processed++;
-        state.processingState.get(group).processes++;
-        checkStorageMap(group, hash);
-        const storage = await getStorage(group, hash, session, stage, key);
-        await storage.onData({ stage, key, data, eof: !data });
-        if (!key) {
-          state.processingState.get(group).storage.delete(hash);
-        }
-        const totalSum = state.processingState.get(group).totalSum;
-        state.processingState.get(group).processes--;
-        if (state.processingState.get(group).processes === 0 && totalSum != null) {
-          const processedArray = await askAll(
-            QuestionTypeEnum.COUNT_PROCESSED,
-            {
-              group,
-            },
-          );
-
-          const processed = processedArray
-            .reduce((value, [key, count]: [string, number]) => value + count, 0);
-
-          if (processed === totalSum) {
-            notify(NotificationTypeEnum.END_PROCESSING, {
-              group,
-            });
-          }
-        }
-      };
 
       return [
         server,
