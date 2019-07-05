@@ -1,5 +1,5 @@
 import { of, from, timer, Observable, throwError, combineLatest } from "rxjs";
-import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share, concat, concatMap, find, catchError, expand } from "rxjs/operators";
+import { map, tap, switchMap, retryWhen, delayWhen, mergeMap, share, concat, concatMap, find, catchError, expand, distinct } from "rxjs/operators";
 import net from "net";
 import domain from "domain";
 import path from "path";
@@ -198,7 +198,10 @@ export const retryStrategy = <T>({
   }),
 );
 
-function runDomain$<T>(run: () => Promise<T>) {
+function runDomain$<T>(
+  run: () => Promise<T>,
+  message?: (retryAttempt: number, retryDuration: number) => string,
+) {
   return of(domain.create()).pipe(
     tap(scope => scope.on("error", error => {
       throw error;
@@ -213,6 +216,7 @@ function runDomain$<T>(run: () => Promise<T>) {
         retryStrategy<T>({
           maxRetryAttempts: 3,
           scalingDuration: 1000,
+          message,
         }),
       ),
     )),
@@ -243,6 +247,7 @@ function runDomainServer$({
       queueLimit,
       onData,
     }),
+    (retryAttempt, retryDuration) => `[Server ${key} - ${hostname}:${port}] Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`,
   );
 }
 
@@ -268,7 +273,9 @@ function runServer$({
     queueDir,
     queueLimit,
     onData,
-  });
+  }).pipe(
+    distinct(),
+  );
 }
 
 function runConnection$({
@@ -294,7 +301,7 @@ function runConnection$({
       retryStrategy({
         maxRetryAttempts: 3,
         scalingDuration: 1000,
-        message: (retryAttempt, retryDuration) => `Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`
+        message: (retryAttempt, retryDuration) => `[Connection ${key} - ${hostname}:${port}] Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`
       }),
     ),
     catchError(() => {
@@ -304,14 +311,15 @@ function runConnection$({
 
   return connection$.pipe(
     expand(connection => {
-      if (connection) {
+      if (!!connection) {
         return of(connection);
       } else {
         return timer(10000).pipe(
           concatMap(() => connection$),
         )
       }
-    })
+    }),
+    distinct(),
   )
 }
 
@@ -714,17 +722,18 @@ function runMachine$(configuration: IConfiguration) {
       state.machineState.onData = async ({ session, group, stage, key, data }: ISendData) => {
         const hash = getHash(session, stage, key || getId());
         checkProcessingMap(group);
-        state.processingState.get(group).processed++;
-        state.processingState.get(group).processes++;
+        const processingState = state.processingState.get(group);
+        processingState.processed++;
+        processingState.processes++;
         checkStorageMap(group, hash);
         const storage = await getStorage(group, hash, session, stage, key);
         await storage.onData({ stage, key, data, eof: !data });
         if (!key) {
-          state.processingState.get(group).storage.delete(hash);
+          processingState.storage.delete(hash);
         }
-        const totalSum = state.processingState.get(group).totalSum;
-        state.processingState.get(group).processes--;
-        if (state.processingState.get(group).processes === 0 && totalSum != null) {
+        const totalSum = processingState.totalSum;
+        processingState.processes--;
+        if (processingState.processes === 0 && totalSum != null) {
           const processedArray = await askAll(
             QuestionTypeEnum.COUNT_PROCESSED,
             {
