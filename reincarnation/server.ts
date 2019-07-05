@@ -542,7 +542,7 @@ function runMachine$(configuration: IConfiguration) {
           const { id, question, type, data } = raw;
           if (id) {
             const answer = await state.machineState.ask(question as QuestionTypeEnum, data);
-            socket.push(JSON.stringify({
+            socket.write(JSON.stringify({
               id,
               answer,
             }) + '\n');
@@ -642,7 +642,7 @@ function runMachine$(configuration: IConfiguration) {
         const processingState = state.processingState.get(group);
         processingState.processed++;
         processingState.processes++;
-        checkStorageMap(group, hash);
+        // checkStorageMap(group, hash);
         const storage = await getStorage(group, hash, session, stage, key);
         await storage.onData({ stage, key, data, eof: !data });
         if (!key) {
@@ -677,8 +677,8 @@ function runMachine$(configuration: IConfiguration) {
             state.answers.set(id, {
               promise,
               resolve,
-            })
-            manager.push(JSON.stringify({
+            });
+            manager.write(JSON.stringify({
               id,
               question,
               data,
@@ -701,7 +701,7 @@ function runMachine$(configuration: IConfiguration) {
               promise,
               resolve,
             });
-            manager.push(JSON.stringify({
+            manager.write(JSON.stringify({
               id,
               question,
               data,
@@ -720,7 +720,7 @@ function runMachine$(configuration: IConfiguration) {
       async function notify(type: NotificationTypeEnum, data: IData) {
         connections.forEach(
           async ([key, manager, worker]) => {
-            manager.push(JSON.stringify({
+            manager.write(JSON.stringify({
               type,
               data,
             }) + '\n');
@@ -830,7 +830,7 @@ function runMachine$(configuration: IConfiguration) {
         }
         const message = JSON.stringify(data) + '\n';
         const [, , worker] = connections.find(([key]) => key === connectionKey);
-        return worker.push(message);
+        return worker.write(message);
       }
 
       async function send({ session, group, stage, key, data }: ISendData) {
@@ -866,15 +866,15 @@ function runMachine$(configuration: IConfiguration) {
         }
       }
 
-      function checkStorageMap(group: string, hash: string) {
-        const processingMap = state.processingState.get(group);
-        if (!processingMap.storage.get(hash)) {
-          processingMap.storage.set(hash, {
-            onData: async () => { },
-            onFinish: async () => { },
-          });
-        }
-      }
+      // function checkStorageMap(group: string, hash: string) {
+      //   const processingMap = state.processingState.get(group);
+      //   if (!processingMap.storage.get(hash)) {
+      //     processingMap.storage.set(hash, {
+      //       onData: async () => { },
+      //       onFinish: async () => { },
+      //     });
+      //   }
+      // }
 
       function getMapperScript(stage: string) {
         let mapper = configuration.server.stages[stage];
@@ -942,7 +942,7 @@ function runMachine$(configuration: IConfiguration) {
           .pipe(new Writable({
             async write(chunk, encoding, callback) {
               totalSum++;
-              stream.pause();
+              // stream.pause();
               await send({
                 session,
                 group,
@@ -951,7 +951,7 @@ function runMachine$(configuration: IConfiguration) {
                 data: chunk.toString(),
               });
               callback(null);
-              stream.resume();
+              // stream.resume();
             }
           }))
           .on("end", () => {
@@ -1005,6 +1005,7 @@ runMachine$({
         return [
           async (data) => {
             state = !state;
+            console.log('here', data);
             await send("reduce_2_flows", state ? "final" : "final_alt", data);
           },
           () => {
