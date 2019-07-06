@@ -1,4 +1,4 @@
-# Kangaroo Framework (NodeJS :heart: Big Data)
+# Kangaroo ~ Distributed Computing Framework (NodeJS :heart: Big Data)
 
 <p align="center">
   <img width="300" src="./logo.svg">

@@ -5,7 +5,7 @@
 			"name": "Node Inspector",
 			"type": "node",
 			"request": "launch",
-			"args": ["${workspaceRoot}/reincarnation/server.ts"],
+			"args": ["${workspaceRoot}/demo.ts"],
 			"runtimeArgs": ["-r", "ts-node/register"],
 			"cwd": "${workspaceRoot}",
 			"protocol": "inspector",
