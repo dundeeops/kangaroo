@@ -1,6 +1,6 @@
 import { Readable } from "stream";
 import path from "path";
-import { runMachine$ } from "./index";
+import { runMachine$ } from "./src/index";
 
 const timeStarted = +new Date();
 
