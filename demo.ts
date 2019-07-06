@@ -1,6 +1,6 @@
-import { Readable } from "stream";
-import path from "path";
-import { runMachine$ } from "./src/index";
+import { Readable } from 'stream';
+import path from 'path';
+import { runMachine$ } from './src/index';
 
 const timeStarted = +new Date();
 
@@ -23,25 +23,25 @@ runMachine$({
     worker: {
       hostname: '0.0.0.0',
       port: 3000,
-      queueDir: path.resolve("./data_queue"),
+      queueDir: path.resolve('./data_queue'),
     },
     manager: {
       hostname: '0.0.0.0',
       port: 3001,
-      queueDir: path.resolve("./manager_queue"),
+      queueDir: path.resolve('./manager_queue'),
     },
     stages: {
       init: async (key, send) => {
         let state = Math.random() > 0.5;
         return async ({ data }) => {
           state = !state;
-          await send("reduce_2_flows", state ? "final" : "final_alt", data);
+          await send('reduce_2_flows', state ? 'final' : 'final_alt', data);
         };
       },
       reduce_2_flows: async (key, send) => {
         return [
           async ({ data }) => {
-            await send("map", null, data);
+            await send('map', null, data);
           },
           () => {
             console.log('Finished 2 flows!');
@@ -50,7 +50,7 @@ runMachine$({
       },
       map: async (key, send) => {
         return async ({ data }) => {
-          await send("final_reduce", "final", data);
+          await send('final_reduce', 'final', data);
         };
       },
       final_reduce: async (key) => {
@@ -58,7 +58,7 @@ runMachine$({
         return [
           async ({ data }) => {
             sum++;
-            // console.log("final_reduce", sum);
+            // console.log('final_reduce', sum);
           },
           () => {
             const timePassed = ((+new Date()) - timeStarted) / 1000;
@@ -77,7 +77,7 @@ runMachine$({
   const max = 100000;
   let index = 0;
   state.runStream(
-    "init",
+    'init',
     null,
     new Readable({
       read() {
@@ -85,7 +85,7 @@ runMachine$({
           this.push(null);
           console.log('The stream has been send! Processing on the cluster...');
         } else {
-          this.push(Buffer.from(String(index) + "\n", 'utf8'));
+          this.push(Buffer.from(String(index) + '\n', 'utf8'));
           index++;
         }
       },
