@@ -1,23 +1,10 @@
-import safeStringify from "fast-safe-stringify";
 import cr from "crypto";
 
 export const ENDING = "\n";
 const SEPARATOR = ":_:";
 
-export function cleanString(str: string) {
-    return str.toString().replace(/(\n|\r)$/, "").trim();
-}
-
-export function serializeData(data): string {
-    return safeStringify(data);
-}
-
 export function makeMessage(data): string {
-    return serializeData(data) + ENDING;
-}
-
-export function parseData(raw) {
-    return JSON.parse(cleanString(raw));
+    return JSON.stringify(data) + ENDING;
 }
 
 export function getHash(...args) {

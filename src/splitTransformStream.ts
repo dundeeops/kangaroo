@@ -9,10 +9,10 @@ import { Transform } from "stream";
  * @param {Boolean} opts.skipEmpty - if line is empty string, skip it (default: false)
  */
 export class SplitTransformStream extends Transform {
-  _brRe: RegExp;
-  _ignoreEndOfBreak: boolean;
-  _skipEmpty: boolean;
-  _buf: string = null;
+  brRe: RegExp;
+  ignoreEndOfBreak: boolean;
+  skipEmpty: boolean;
+  buf: string = null;
 
   constructor(options: {
     breakMatcher?: RegExp;
@@ -23,10 +23,10 @@ export class SplitTransformStream extends Transform {
       ...options,
       objectMode: true,
     });
-    this._brRe = options.breakMatcher || /\r?\n/;
-    this._ignoreEndOfBreak = 'ignoreEndOfBreak' in options ? Boolean(options.ignoreEndOfBreak) : true;
-    this._skipEmpty = Boolean(options.skipEmpty);
-    this._buf = null;
+    this.brRe = options.breakMatcher || /\r?\n/;
+    this.ignoreEndOfBreak = 'ignoreEndOfBreak' in options ? Boolean(options.ignoreEndOfBreak) : true;
+    this.skipEmpty = Boolean(options.skipEmpty);
+    this.buf = null;
   }
 
   _transform(chunk, encoding, cb) {
@@ -38,13 +38,13 @@ export class SplitTransformStream extends Transform {
     }
 
     try {
-      if (this._buf !== null) {
-        this._buf += str;  
+      if (this.buf !== null) {
+        this.buf += str;  
       } else {
-        this._buf = str;  
+        this.buf = str;  
       }
 
-      const lines = this._buf.split(this._brRe);
+      const lines = this.buf.split(this.brRe);
       const lastIndex = lines.length - 1;
       for (let i = 0; i < lastIndex; i++) {
         this._writeItem(lines[i]);
@@ -52,28 +52,28 @@ export class SplitTransformStream extends Transform {
 
       const lastLine = lines[lastIndex];
       if (lastLine.length) {
-        this._buf = lastLine;
-      } else if (!this._ignoreEndOfBreak) {
-        this._buf = '';
+        this.buf = lastLine;
+      } else if (!this.ignoreEndOfBreak) {
+        this.buf = '';
       } else {
-        this._buf = null;
+        this.buf = null;
       }
       cb();
     } catch (err) {
-      cb(err); // invalid data type;
+      cb(err);
     }
   }
 
   _flush(cb) {
-    if (this._buf !== null) {
-      this._writeItem(this._buf);
-      this._buf = null;
+    if (this.buf !== null) {
+      this._writeItem(this.buf);
+      this.buf = null;
     }
     cb();
   }
 
   _writeItem(line) {
-    if (line.length > 0 || !this._skipEmpty) {
+    if (line.length > 0 || !this.skipEmpty) {
       this.push(line);
     }
   }

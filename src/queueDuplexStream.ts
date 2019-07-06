@@ -1,7 +1,7 @@
-import { Writable, Readable } from "stream";
+import { Writable } from "stream";
 
-import { QueueService } from "./QueueService";
-import { getPromise, } from "./promiseUtil";
+import { QueueService } from "./queueService";
+import { getPromise } from "./promiseUtil";
 
 export const queueDuplexStream = ({
   fn,
@@ -18,6 +18,7 @@ export const queueDuplexStream = ({
     dir,
     memoryLimit,
   });
+
   let inProcessCount = 0;
   let isStopped = true;
   let locker = getPromise();
@@ -53,7 +54,6 @@ export const queueDuplexStream = ({
       }
       next();
     },
-  
     async final(done) {
       isStopped = true;
       await queue.preserve();

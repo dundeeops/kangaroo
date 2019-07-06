@@ -2,29 +2,25 @@
   "name": "kangaroo",
   "version": "1.0.0",
   "private": false,
-  "main": "index.js",
+  "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
     "test": "jest"
   },
   "devDependencies": {
     "js-yaml": "^3.12.1",
-    "node-etcd": "^7.0.0",
     "yargs": "^12.0.5",
     "jest": "^24.1.0",
-    "node-memwatch": "^1.0.1",
-    "typescript": "3.5.2",
     "ts-node": "8.3.0",
+    "typescript": "3.5.2"
+  },
+  "dependencies": {
+    "rxjs": "6.5.2",
     "net": "1.0.2",
+    "crypto": "1.0.1",
     "domain": "0.0.1",
     "path": "0.12.7",
     "stream": "0.0.2",
     "@types/node": "12.0.12"
-  },
-  "dependencies": {
-    "event-stream": "^4.0.1",
-    "fast-safe-stringify": "^2.0.6",
-    "tar": "^4.4.8",
-    "rxjs": "6.5.2"
   }
 }
