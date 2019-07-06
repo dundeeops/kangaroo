@@ -19,6 +19,8 @@ export class QueueService {
     _fileList: string[] = [];
     _promise: Promise<any> = null;
     _resolve: Function = null;
+    _promiseDiskOperation: Promise<any> = null;
+    _resolveDiskOperation: Function = null;
     _dir: string;
     _memoryLimit: number;
     _isInitialized: boolean;
@@ -41,15 +43,17 @@ export class QueueService {
     async init() {
         this._memoryQueue = [];
         this._fileList = [];
-        this._promise = null;
-        this._resolve = null;
+        [this._promise, this._resolve] = getPromise();
+        this._resolve();
+        [this._promiseDiskOperation, this._resolveDiskOperation] = getPromise();
+        this._resolveDiskOperation();
     }
 
     async initCache() {
         if (!this._isInitialized) {
+            this._isInitialized = true;
             await this.initCacheFolder();
             await this.readCacheFolder();
-            this._isInitialized = true;
         }
     }
 
@@ -90,7 +94,7 @@ export class QueueService {
     }
 
     async popDataStorage() {
-        const file = this._fileList.pop();
+        const file = this._fileList.shift();
         if (file) {
             return await new Promise<string[]>((r, e) => {
                 fs.readFile(file, { encoding: "utf8" }, async (error, data) => {
@@ -106,10 +110,10 @@ export class QueueService {
         }
     }
 
-    async pushToDiskStorage(data) {
-        const name = getId();
+    async pushToDiskStorage(data: string[]) {
+        const name = `${this._fileList.length}_${getId()}`;
         const file = path.resolve(this._dir, name);
-        await new Promise((r, e) => fs.appendFile(
+        await new Promise((r, e) => fs.writeFile(
             file,
             data.join('\n'),
             (error) => {
@@ -123,35 +127,36 @@ export class QueueService {
     }
 
     async preserve() {
-        await this.initCache();
         if (this._memoryQueue.length) {
             await this.pushToDiskStorage(this._memoryQueue);
             this._memoryQueue = [];
         }
-        if (this._resolve) {
-            this._resolve();
-        }
+        this._resolve();
     }
 
     async push(data) {
-        await this.initCache();
+        await this._promiseDiskOperation;
         if (this._memoryQueue.length > this._memoryLimit) {
-            await this.pushToDiskStorage(this._memoryQueue);
-            this._memoryQueue = [];
+            [this._promiseDiskOperation, this._resolveDiskOperation] = getPromise();
+            const arr = this._memoryQueue;
+            this._memoryQueue = [data];
+            await this.pushToDiskStorage(arr);
+            this._resolveDiskOperation();
+        } else {
+            this._memoryQueue.push(data);
         }
-        this._memoryQueue.push(data);
-        if (this._resolve) {
-            this._resolve();
-            this._resolve = null;
-        }
+        this._resolve(); 
     }
 
     async pop() {
-        await this.initCache();
+        await this._promiseDiskOperation;
         if (this._memoryQueue.length === 0 && this._fileList.length > 0) {
+            [this._promiseDiskOperation, this._resolveDiskOperation] = getPromise();
             this._memoryQueue = await this.popDataStorage();
+            this._resolveDiskOperation();
         }
-        return this._memoryQueue.pop();
+        const data = this._memoryQueue.shift();
+        return data;
     }
 
     async popWait() {

@@ -22,24 +22,17 @@ export const queueDuplexStream = ({
   let isStopped = true;
   let locker = getPromise();
   locker[1]();
-  locker[1] = undefined;
 
   async function doNextTask(data) {
     await fn(data);
     inProcessCount--;
-    if (locker[1]) {
-      locker[1]();
-      locker[1] = undefined;
-    }
+    locker[1]();
   }
 
   async function startCalculations() {
     while (!isStopped) {
       await locker[0];
-      let data = await queue.pop();
-      if (!data) {
-        data = await queue.popWait();
-      }
+      let data = await queue.popWait();
       if (data) {
         inProcessCount++;
         if (inProcessCount >= concurrency) {
@@ -52,12 +45,13 @@ export const queueDuplexStream = ({
 
   return new Writable({
     async write(line, encoding, next) {
-      await queue.push(line);
-      next();
+      await queue.initCache();
+      await queue.push(line.toString());
       if (isStopped) {
         isStopped = false;
         startCalculations();
       }
+      next();
     },
   
     async final(done) {

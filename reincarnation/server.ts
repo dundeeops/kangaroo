@@ -204,10 +204,14 @@ function makeConnection({
 }) {
   const socket = new net.Socket();
   socket
-    .pipe(new SplitTransformStream())
+    .pipe(new SplitTransformStream({
+      skipEmpty: true,
+    }))
     .pipe(new Writable({
       async write(data, encoding, cb) {
-        await onData(key, socket, JSON.parse(data.toString()));
+        if (data) {
+          await onData(key, socket, JSON.parse(data.toString()));
+        }
         cb();
       },
       final(cb) {
@@ -462,7 +466,7 @@ function runConnection$({
   return connection$.pipe(
     expand(connection => {
       if (!!connection) {
-        return of(connection);
+        return from(new Promise<net.Socket>(() => connection)); // Fix for nodejs < 12.x.x
       } else {
         return timer(sleepTimeout || 10000).pipe(
           concatMap(() => connection$),
@@ -610,10 +614,15 @@ function runMachine$(configuration: IConfiguration) {
           const { id, question, type, data } = raw;
           if (id) {
             const answer = await state.machineState.ask(question as QuestionTypeEnum, data);
-            socket.write(JSON.stringify({
-              id,
-              answer,
-            }) + '\n');
+            return await new Promise((r, e) => socket.write(JSON.stringify({
+                id,
+                answer,
+              }) + '\n', "utf8", error => {
+              if (error) {
+                return e(error);
+              }
+              r();
+            }));
           } else {
             await state.machineState.notify(type as NotificationTypeEnum, data);
           }
@@ -749,11 +758,16 @@ function runMachine$(configuration: IConfiguration) {
               promise,
               resolve,
             });
-            manager.write(JSON.stringify({
-              id,
-              question,
-              data,
-            }) + '\n');
+            await new Promise((r, e) => manager.write(JSON.stringify({
+                id,
+                question,
+                data,
+              }) + '\n', "utf8", error => {
+              if (error) {
+                return e(error);
+              }
+              r();
+            }));
             const answer: IData = await promise;
             state.answers.delete(id);
             return [key, answer];
@@ -773,11 +787,16 @@ function runMachine$(configuration: IConfiguration) {
               promise,
               resolve,
             });
-            manager.write(JSON.stringify({
-              id,
-              question,
-              data,
-            }) + '\n');
+            await new Promise((r, e) => manager.write(JSON.stringify({
+                id,
+                question,
+                data,
+              }) + '\n', "utf8", error => {
+              if (error) {
+                return e(error);
+              }
+              r();
+            }));
             const answer = await promise;
             if (answer && !resolved) {
               resolved = true;
@@ -796,10 +815,15 @@ function runMachine$(configuration: IConfiguration) {
       async function notify(type: NotificationTypeEnum, data: IData) {
         connections.forEach(
           async ([key, manager, worker]) => {
-            manager.write(JSON.stringify({
-              type,
-              data,
-            }) + '\n');
+            await new Promise((r, e) => manager.write(JSON.stringify({
+                type,
+                data,
+              }) + '\n', "utf8", error => {
+              if (error) {
+                return e(error);
+              }
+              r();
+            }));
           }
         );
       }
@@ -913,7 +937,7 @@ function runMachine$(configuration: IConfiguration) {
         return connectionKey;
       }
 
-      function sendToServer(connectionKey: string, data: IData) {
+      async function sendToServer(connectionKey: string, data: IData) {
         if (!connectionKey) {
           throw Error("NO CONNECTIONS FOUND TO SEND");
         }
@@ -922,7 +946,12 @@ function runMachine$(configuration: IConfiguration) {
         const connection = connections.find(([key]) => key === connectionKey);
         if (connection) {
           const [key, manager, worker] = connection;
-          return worker.write(message);
+          return await new Promise((r, e) => worker.write(message, "utf8", error => {
+            if (error) {
+              return e(error);
+            }
+            r();
+          }));
         } else {
           throw Error(`NO CONNECTION FOUND WITH KEY ${connectionKey}`);
         }
@@ -948,7 +977,7 @@ function runMachine$(configuration: IConfiguration) {
         ) {
           await state.machineState.onData(raw);
         } else {
-          sendToServer(
+          await sendToServer(
             connectionKey,
             raw
           );
@@ -1167,6 +1196,7 @@ runMachine$({
       read() {
         if (max <= index) {
           this.push(null);
+          console.log('The stream has been send! Processing on the cluster...');
         } else {
           this.push(Buffer.from(String(index) + "\n", 'utf8'));
           index++;
