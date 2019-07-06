@@ -1,12 +1,12 @@
-import { of, from, timer, Observable, throwError, combineLatest } from "rxjs";
-import { map, tap, retryWhen, mergeMap, concatMap, catchError, expand, distinct } from "rxjs/operators";
-import net from "net";
-import domain from "domain";
-import { Readable, Writable } from "stream";
-import { SplitTransformStream } from "./splitTransformStream";
-import { getHash, getId } from "./serializationUtil";
-import { queueDuplexStream } from "./queueDuplexStream";
-import { getPromise } from "./promiseUtil";
+import { of, from, timer, Observable, throwError, combineLatest } from 'rxjs';
+import { map, tap, retryWhen, mergeMap, concatMap, catchError, expand, distinct } from 'rxjs/operators';
+import net from 'net';
+import domain from 'domain';
+import { Readable, Writable } from 'stream';
+import { SplitTransformStream } from './splitTransformStream';
+import { getHash, getId } from './serializationUtil';
+import { queueDuplexStream } from './queueDuplexStream';
+import { getPromise } from './promise';
 
 interface IDataBase {
   [key: string]: string | number | boolean | IDataBase | Array<string | number | boolean | IDataBase>;
@@ -131,15 +131,15 @@ interface ISendData extends IDataBase {
 }
 
 enum QuestionTypeEnum {
-  GET_STAGE_SERVER = "getStageServer",
-  GET_SESSION_STAGE_KEY_SERVER = "getSessionStageKeyServer",
-  COUNT_PROCESSED = "countProcessed",
-  CAN_GET_STAGE = "canGetStage",
+  GET_STAGE_SERVER = 'getStageServer',
+  GET_SESSION_STAGE_KEY_SERVER = 'getSessionStageKeyServer',
+  COUNT_PROCESSED = 'countProcessed',
+  CAN_GET_STAGE = 'canGetStage',
 }
 
 enum NotificationTypeEnum {
-  END_PROCESSING = "endProcessing",
-  NULL_ACHIEVED = "nullAchieved",
+  END_PROCESSING = 'endProcessing',
+  NULL_ACHIEVED = 'nullAchieved',
 }
 
 function makeServer({
@@ -183,9 +183,9 @@ function makeServer({
         memoryLimit: queueLimit || 1000,
       }))
   });
-  server.on("close", () => onClose());
-  server.on("error", (error) => onError(error));
-  server.on("listening", () => onConnect());
+  server.on('close', () => onClose());
+  server.on('error', (error) => onError(error));
+  server.on('listening', () => onConnect());
   server.listen(port, hostname);
   return server;
 }
@@ -229,9 +229,9 @@ function makeConnection({
         cb();
       }
     }));
-  socket.on("close", () => onClose());
-  socket.on("ready", () => onConnect());
-  socket.on("error", (error) => onError(error));
+  socket.on('close', () => onClose());
+  socket.on('ready', () => onConnect());
+  socket.on('error', (error) => onError(error));
   socket.connect({
     host: hostname,
     port: port,
@@ -350,7 +350,7 @@ function runDomain$<T>({
   scalingDuration?: number;
 }) {
   return of(domain.create()).pipe(
-    tap(scope => scope.on("error", error => {
+    tap(scope => scope.on('error', error => {
       throw error;
     })),
     mergeMap(scope => from(new Promise<T>((r) => {
@@ -992,7 +992,7 @@ export function runMachine$(configuration: IConfiguration) {
 
       async function sendToServer(connectionKey: string, data: IData) {
         if (!connectionKey) {
-          throw Error("NO CONNECTIONS FOUND TO SEND");
+          throw Error('NO CONNECTIONS FOUND TO SEND');
         }
         const connection = connections.find(([key]) => key === connectionKey);
         if (connection) {

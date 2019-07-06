@@ -1,7 +1,7 @@
-import { Writable } from "stream";
+import { Writable } from 'stream';
 
-import { QueueService } from "./queueService";
-import { getPromise } from "./promiseUtil";
+import { QueueService } from './queueService';
+import { getPromise } from './promise';
 
 export const queueDuplexStream = ({
   fn,

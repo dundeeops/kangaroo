@@ -1,14 +1,14 @@
-import fs from "fs";
-import path from "path";
+import fs from 'fs';
+import path from 'path';
 import {
     getId,
-} from "./serializationUtil";
+} from './serializationUtil';
 import {
   getPromise,
-} from "./promiseUtil";
+} from './promise';
 
 const defaultOptions = {
-    dir: path.resolve("./queue"),
+    dir: path.resolve('./queue'),
     memoryLimit: 10000,
 };
 
@@ -95,7 +95,7 @@ export class QueueService {
         const file = this.fileList.shift();
         if (file) {
             return await new Promise<string[]>((r, e) => {
-                fs.readFile(file, { encoding: "utf8" }, async (error, data) => {
+                fs.readFile(file, { encoding: 'utf8' }, async (error, data) => {
                     if (error) {
                         return e(error);
                     }

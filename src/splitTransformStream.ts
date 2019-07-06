@@ -1,4 +1,4 @@
-import { Transform } from "stream";
+import { Transform } from 'stream';
 
 /**
  * The SplitTransformStream is reading String or Buffer content from a Readable stream
