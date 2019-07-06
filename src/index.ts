@@ -2,8 +2,8 @@ import { of, from, timer, Observable, throwError, combineLatest } from "rxjs";
 import { map, tap, retryWhen, mergeMap, concatMap, catchError, expand, distinct } from "rxjs/operators";
 import net from "net";
 import domain from "domain";
-import { SplitTransformStream } from "./splitTransformStream";
 import { Readable, Writable } from "stream";
+import { SplitTransformStream } from "./splitTransformStream";
 import { getHash, getId } from "./serializationUtil";
 import { queueDuplexStream } from "./queueDuplexStream";
 import { getPromise } from "./promiseUtil";
@@ -42,11 +42,11 @@ interface IProcessing {
   usedGroupsTotals: Map<string, number>,
 }
 
-type IProcessingState = Map<string, IProcessing>;
+type IMachineState = Map<string, IProcessing>;
 
-interface IMachineState {
-  ask?: (question: QuestionTypeEnum, data: IData) => Promise<IData>;
-  notify?: (type: NotificationTypeEnum, data: IData) => Promise<void>;
+interface IMachineEventListener {
+  onAsk?: (question: QuestionTypeEnum, data: IData) => Promise<IData>;
+  onNotify?: (type: NotificationTypeEnum, data: IData) => Promise<void>;
   onData?: (data: ISendData) => Promise<void>;
 }
 
@@ -111,12 +111,12 @@ interface ISessionStageKeyCachePromise {
   resolve: Function;
 }
 
-interface IServerState {
-  processingState: IProcessingState;
+interface IKangarooState {
   machineState: IMachineState;
+  machineEventListener: IMachineEventListener;
   sessionStageKeyCache: Map<string, ISessionStageKeyCache | ISessionStageKeyCachePromise>;
   connectionCache: Map<string, IConnectionCache | IConnectionCachePromise>;
-  answers: Map<string, {
+  answerResolverState: Map<string, {
     promise: Promise<void>;
     resolve: Function;
   }>;
@@ -150,6 +150,7 @@ function makeServer({
   concurrency,
   queueLimit,
   onData,
+  onDataError,
   onConnect,
   onError,
   onClose,
@@ -161,6 +162,7 @@ function makeServer({
   queueLimit?: number;
   concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   onConnect: Function;
   onError: Function;
   onClose: Function;
@@ -172,7 +174,11 @@ function makeServer({
         concurrency: concurrency || 10,
         dir: queueDir,
         fn: async (line) => {
-          await onData(key, socket, JSON.parse(line));
+          try {
+            await onData(key, socket, JSON.parse(line));
+          } catch (error) {
+            await onDataError(key, socket, line, error);
+          }
         },
         memoryLimit: queueLimit || 1000,
       }))
@@ -189,6 +195,7 @@ function makeConnection({
   port,
   hostname,
   onData,
+  onDataError,
   onConnect,
   onError,
   onClose,
@@ -197,6 +204,7 @@ function makeConnection({
   port: number;
   hostname: string;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   onConnect: Function;
   onError: Function;
   onClose: Function;
@@ -209,7 +217,11 @@ function makeConnection({
     .pipe(new Writable({
       async write(data, encoding, cb) {
         if (data) {
-          await onData(key, socket, JSON.parse(data.toString()));
+          try {
+            await onData(key, socket, JSON.parse(data.toString()));
+          } catch (error) {
+            await onDataError(key, socket, data.toString(), error);
+          }
         }
         cb();
       },
@@ -235,6 +247,7 @@ async function runServer({
   queueLimit,
   concurrency,
   onData,
+  onDataError,
 }: {
   key: string;
   port: number;
@@ -243,6 +256,7 @@ async function runServer({
   queueLimit?: number;
   concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
 }): Promise<net.Server> {
   return await new Promise<net.Server>((r, e) => {
     const server = makeServer({
@@ -253,6 +267,7 @@ async function runServer({
       queueLimit,
       concurrency,
       onData,
+      onDataError,
       onConnect() {
         r(server);
       },
@@ -271,11 +286,13 @@ async function runConnection({
   port,
   hostname,
   onData,
+  onDataError,
 }: {
   key: string;
   port: number;
   hostname: string;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
 }): Promise<net.Socket> {
   return new Promise((r, e) => {
     const connection = makeConnection({
@@ -283,6 +300,7 @@ async function runConnection({
       port,
       hostname,
       onData,
+      onDataError,
       onConnect() {
         r(connection);
       },
@@ -360,6 +378,7 @@ function runDomainServer$({
   queueLimit,
   concurrency,
   onData,
+  onDataError,
   maxRetryAttempts,
   scalingDuration,
 }: {
@@ -370,6 +389,7 @@ function runDomainServer$({
   queueLimit?: number;
   concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   maxRetryAttempts?: number;
   scalingDuration?: number;
 }) {
@@ -382,6 +402,7 @@ function runDomainServer$({
       queueLimit,
       concurrency,
       onData,
+      onDataError,
     }),
     message: (retryAttempt, retryDuration) => `[Server ${key} - ${hostname}:${port}] Attempt ${retryAttempt}: retrying to reconnect in ${retryDuration}ms`,
     maxRetryAttempts,
@@ -397,6 +418,7 @@ function runServer$({
   queueLimit,
   concurrency,
   onData,
+  onDataError,
   maxRetryAttempts,
   scalingDuration,
 }: {
@@ -407,6 +429,7 @@ function runServer$({
   queueLimit?: number;
   concurrency?: number;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   maxRetryAttempts?: number;
   scalingDuration?: number;
 }) {
@@ -418,6 +441,7 @@ function runServer$({
     queueLimit,
     concurrency,
     onData,
+    onDataError,
     maxRetryAttempts,
     scalingDuration,
   }).pipe(
@@ -430,6 +454,7 @@ function runConnection$({
   port,
   hostname,
   onData,
+  onDataError,
   maxRetryAttempts,
   scalingDuration,
   sleepTimeout,
@@ -438,6 +463,7 @@ function runConnection$({
   port: number;
   hostname: string;
   onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   maxRetryAttempts?: number;
   scalingDuration?: number;
   sleepTimeout?: number;
@@ -448,6 +474,7 @@ function runConnection$({
       port,
       hostname,
       onData,
+      onDataError,
     }),
   ).pipe(
     retryWhen(
@@ -486,6 +513,7 @@ function runPairConnection$({
     port: number;
     hostname: string;
     onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+    onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
     maxRetryAttempts?: number;
     scalingDuration?: number;
     sleepTimeout?: number;
@@ -494,6 +522,7 @@ function runPairConnection$({
     port: number;
     hostname: string;
     onData: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+    onDataError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
     maxRetryAttempts?: number;
     scalingDuration?: number;
     sleepTimeout?: number;
@@ -511,11 +540,15 @@ function runPairServer$({
   worker,
   manager,
   onDataManager,
+  onDataManagerError,
   onDataWorker,
+  onDataWorkerError,
 }: {
   key: string;
   onDataManager: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataManagerError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   onDataWorker: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataWorkerError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   worker: {
     port: number;
     hostname: string;
@@ -536,18 +569,32 @@ function runPairServer$({
   }
 }) {
   return combineLatest([
-    runServer$({ key, onData: onDataManager, ...manager }),
-    runServer$({ key, onData: onDataWorker, ...worker }),
+    runServer$({
+      key,
+      onData: onDataManager,
+      onDataError: onDataManagerError,
+      ...manager,
+    }),
+    runServer$({
+      key,
+      onData: onDataWorker,
+      onDataError: onDataWorkerError,
+      ...worker,
+    }),
   ]);
 }
 
 function runConnections$({
   onDataConnectionManager,
+  onDataConnectionManagerError,
   onDataConnectionWorker,
+  onDataConnectionWorkerError,
   connections,
 }: {
   onDataConnectionManager: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataConnectionManagerError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   onDataConnectionWorker: (key: string, socket: net.Socket, data: IData) => Promise<void>;
+  onDataConnectionWorkerError: (key: string, socket: net.Socket, data: string, error: Error) => Promise<void>;
   connections: {
     key: string;
     manager: {
@@ -572,10 +619,12 @@ function runConnections$({
       manager: {
         ...config.manager,
         onData: onDataConnectionManager,
+        onDataError: onDataConnectionManagerError,
       },
       worker: {
         ...config.worker,
         onData: onDataConnectionWorker,
+        onDataError: onDataConnectionWorkerError,
       },
     }))
   ).pipe(
@@ -595,13 +644,26 @@ function getDefaultProcessingMap(): IProcessing {
   }
 }
 
+async function write(socket: net.Socket, data: IData) {
+  return await new Promise<void>((r, e) => socket.write(
+    JSON.stringify(data) + '\n',
+    'utf8',
+    error => {
+      if (error) {
+        return e(error);
+      }
+      r();
+    },
+  ));
+}
+
 export function runMachine$(configuration: IConfiguration) {
-  return of<IServerState>({
-    processingState: new Map(),
+  return of<IKangarooState>({
+    machineState: new Map(),
+    machineEventListener: {},
+    answerResolverState: new Map(),
     sessionStageKeyCache: new Map(),
     connectionCache: new Map(),
-    machineState: {},
-    answers: new Map(),
   }).pipe(
     mergeMap(state => combineLatest([
       of(state),
@@ -612,35 +674,42 @@ export function runMachine$(configuration: IConfiguration) {
         onDataManager: async (key, socket, raw: IDataBase) => {
           const { id, question, type, data } = raw;
           if (id) {
-            const answer = await state.machineState.ask(question as QuestionTypeEnum, data);
-            return await new Promise((r, e) => socket.write(JSON.stringify({
-                id,
-                answer,
-              }) + '\n', "utf8", error => {
-              if (error) {
-                return e(error);
-              }
-              r();
-            }));
+            const answer = await state.machineEventListener.onAsk(question as QuestionTypeEnum, data);
+            return await write(socket, {
+              id,
+              answer,
+            });
           } else {
-            await state.machineState.notify(type as NotificationTypeEnum, data);
+            await state.machineEventListener.onNotify(type as NotificationTypeEnum, data);
           }
         },
         onDataWorker: async (key, socket, data) => {
-          await state.machineState.onData(data as ISendData);
+          await state.machineEventListener.onData(data as ISendData);
+        },
+        onDataManagerError: async (key: string, socket: net.Socket, data: string, error: Error) => {
+          console.error(key, data, error);
+        },
+        onDataWorkerError: async (key: string, socket: net.Socket, data: string, error: Error) => {
+          console.error(key, data, error);
         },
       }) : of<net.Server>(null),
       runConnections$({
         connections: configuration.connections,
         onDataConnectionManager: async (key, socket, raw: IDataBase) => {
           const { id, answer } = raw;
-          state.answers.get(id as string).resolve(answer);
+          state.answerResolverState.get(id as string).resolve(answer);
         },
-        onDataConnectionWorker: async (key, socket, data) => { },
+        onDataConnectionWorker: async (key, socket, data) => { }, // Worker obliged to ignore any incoming messages
+        onDataConnectionManagerError: async (key: string, socket: net.Socket, data: string, error: Error) => {
+          console.error(key, data, error);
+        },
+        onDataConnectionWorkerError: async (key: string, socket: net.Socket, data: string, error: Error) => {
+          console.error(key, data, error);
+        },
       }),
     ])),
     map(([state, server, connections]) => {
-      state.machineState.ask = async (question, data) => {
+      state.machineEventListener.onAsk = async (question, data) => {
         const { session, stage, group, key } = data as {
           session: string;
           group: string;
@@ -651,7 +720,7 @@ export function runMachine$(configuration: IConfiguration) {
           case QuestionTypeEnum.CAN_GET_STAGE:
             return Object.keys(configuration.server.stages).includes(stage);
           case QuestionTypeEnum.COUNT_PROCESSED:
-            const map = state.processingState.get(group);
+            const map = state.machineState.get(group);
             return map ? map.processed : 0;
           case QuestionTypeEnum.GET_SESSION_STAGE_KEY_SERVER:
             const hash = getHash(session, stage, key);
@@ -663,16 +732,16 @@ export function runMachine$(configuration: IConfiguration) {
         return null;
       };
 
-      state.machineState.notify = async (type, data) => {
+      state.machineEventListener.onNotify = async (type, data) => {
         const { group, totalSum } = data as {
           group: string;
           totalSum: number;
         };
-        let map = group && state.processingState.get(group);
+        let map = group && state.machineState.get(group);
         switch (type) {
           case NotificationTypeEnum.NULL_ACHIEVED:
             checkProcessingMap(group);
-            map = state.processingState.get(group);
+            map = state.machineState.get(group);
             if (map) {
               map.totalSum = totalSum;
               const processedArray = await askAll(
@@ -709,26 +778,26 @@ export function runMachine$(configuration: IConfiguration) {
                 );
               }
 
-              state.processingState.delete(group);
+              state.machineState.delete(group);
             }
             return;
         }
       };
 
-      state.machineState.onData = async ({ session, group, stage, key, data }: ISendData) => {
+      state.machineEventListener.onData = async ({ session, group, stage, key, data }: ISendData) => {
         const hash = getHash(session, stage, key || getId());
         checkProcessingMap(group);
-        const processingState = state.processingState.get(group);
-        processingState.processed++;
-        processingState.processes++;
+        const machineState = state.machineState.get(group);
+        machineState.processed++;
+        machineState.processes++;
         const storage = await getStorage({group, hash, session, stage, key});
         await storage.onData({ stage, key, data });
         if (!key) {
-          processingState.storage.delete(hash);
+          machineState.storage.delete(hash);
         }
-        const totalSum = processingState.totalSum;
-        processingState.processes--;
-        if (processingState.processes === 0 && totalSum != null) {
+        const totalSum = machineState.totalSum;
+        machineState.processes--;
+        if (machineState.processes === 0 && totalSum != null) {
           const processedArray = await askAll(
             QuestionTypeEnum.COUNT_PROCESSED,
             {
@@ -753,22 +822,17 @@ export function runMachine$(configuration: IConfiguration) {
           async ([key, manager, worker]): Promise<[string, IData]> => {
             const id = getId();
             const [promise, resolve] = getPromise();
-            state.answers.set(id, {
+            state.answerResolverState.set(id, {
               promise,
               resolve,
             });
-            await new Promise((r, e) => manager.write(JSON.stringify({
-                id,
-                question,
-                data,
-              }) + '\n', "utf8", error => {
-              if (error) {
-                return e(error);
-              }
-              r();
-            }));
+            await write(manager, {
+              id,
+              question,
+              data,
+            });
             const answer: IData = await promise;
-            state.answers.delete(id);
+            state.answerResolverState.delete(id);
             return [key, answer];
           }
         ));
@@ -782,26 +846,21 @@ export function runMachine$(configuration: IConfiguration) {
           async ([key, manager, worker]) => {
             const id = getId();
             const [promise, resolve] = getPromise();
-            state.answers.set(id, {
+            state.answerResolverState.set(id, {
               promise,
               resolve,
             });
-            await new Promise((r, e) => manager.write(JSON.stringify({
-                id,
-                question,
-                data,
-              }) + '\n', "utf8", error => {
-              if (error) {
-                return e(error);
-              }
-              r();
-            }));
+            await write(manager, {
+              id,
+              question,
+              data,
+            });
             const answer = await promise;
             if (answer && !resolved) {
               resolved = true;
               r([key, answer]);
             }
-            state.answers.delete(id);
+            state.answerResolverState.delete(id);
             count++;
             if (count === connections.length && !resolved) {
               r(null);
@@ -814,15 +873,10 @@ export function runMachine$(configuration: IConfiguration) {
       async function notify(type: NotificationTypeEnum, data: IData) {
         connections.forEach(
           async ([key, manager, worker]) => {
-            await new Promise((r, e) => manager.write(JSON.stringify({
-                type,
-                data,
-              }) + '\n', "utf8", error => {
-              if (error) {
-                return e(error);
-              }
-              r();
-            }));
+            await write(manager, {
+              type,
+              data,
+            });
           }
         );
       }
@@ -874,10 +928,10 @@ export function runMachine$(configuration: IConfiguration) {
         const startTime = +new Date();
         let connections: string[] = [];
         while (!connections.length && startTime + CAN_GET_STAGE_TIMEOUT > +new Date()) {
-          const answers = await askAll(QuestionTypeEnum.CAN_GET_STAGE, {
+          const answerResolverState = await askAll(QuestionTypeEnum.CAN_GET_STAGE, {
             stage,
           });
-          connections = answers.map(([key, result]) => key);
+          connections = answerResolverState.map(([key, result]) => key);
           if (!connections.length) {
             await new Promise(r => setTimeout(r, CAN_GET_STAGE_AWAIT_TIMEOUT));
           }
@@ -940,17 +994,10 @@ export function runMachine$(configuration: IConfiguration) {
         if (!connectionKey) {
           throw Error("NO CONNECTIONS FOUND TO SEND");
         }
-        const message = JSON.stringify(data) + '\n';
-        
         const connection = connections.find(([key]) => key === connectionKey);
         if (connection) {
           const [key, manager, worker] = connection;
-          return await new Promise((r, e) => worker.write(message, "utf8", error => {
-            if (error) {
-              return e(error);
-            }
-            r();
-          }));
+          await write(worker, data);
         } else {
           throw Error(`NO CONNECTION FOUND WITH KEY ${connectionKey}`);
         }
@@ -974,7 +1021,7 @@ export function runMachine$(configuration: IConfiguration) {
             !connectionKey || configuration.server.key === connectionKey
           )
         ) {
-          await state.machineState.onData(raw);
+          await state.machineEventListener.onData(raw);
         } else {
           await sendToServer(
             connectionKey,
@@ -984,8 +1031,8 @@ export function runMachine$(configuration: IConfiguration) {
       }
 
       function checkProcessingMap(group: string) {
-        if (!state.processingState.get(group)) {
-          state.processingState.set(group, getDefaultProcessingMap());
+        if (!state.machineState.get(group)) {
+          state.machineState.set(group, getDefaultProcessingMap());
         }
       }
 
@@ -1012,10 +1059,10 @@ export function runMachine$(configuration: IConfiguration) {
         group: string;
         nextGroup: string;
       }) {
-        const processingState = state.processingState.get(group);
-        processingState.usedGroupsTotals.set(
+        const machineState = state.machineState.get(group);
+        machineState.usedGroupsTotals.set(
           nextGroup,
-          (processingState.usedGroupsTotals.get(nextGroup) || 0) + 1,
+          (machineState.usedGroupsTotals.get(nextGroup) || 0) + 1,
         );
       }
 
@@ -1066,11 +1113,11 @@ export function runMachine$(configuration: IConfiguration) {
         stage: string;
         key?: string;
       }) {
-        let storage = state.processingState.get(group).storage.get(hash);
+        let storage = state.machineState.get(group).storage.get(hash);
         if (!storage) {
           const mapper = getMapperScript(stage);
           storage = await buildMap({group, session, key, mapper});
-          state.processingState.get(group).storage.set(hash, storage);
+          state.machineState.get(group).storage.set(hash, storage);
         }
         return storage;
       }

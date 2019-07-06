@@ -74,7 +74,7 @@ runMachine$({
 }).subscribe(state => {
   console.log(state);
 
-  const max = 1000000;
+  const max = 100000;
   let index = 0;
   state.runStream(
     "init",
