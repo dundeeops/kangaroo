@@ -6,6 +6,12 @@
 
 > `The framework is under development`
 
+## Demo
+
+```
+node --inspect -r ts-node/register demo.ts
+```
+
 ## Overview
 
 This is is an open-source distributed general-purpose cluster-computing framework (Big Data processing tool).
