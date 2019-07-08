@@ -34,12 +34,22 @@ interface IProcessingStorage {
   onFinish: () => Promise<void>
 }
 
+interface IBatch {
+  id: string;
+  group: string;
+  isMap: boolean;
+  rows: IDataBase[];
+  leader: string;
+  spares: string[];
+}
+
 interface IProcessing {
   totalSum?: number;
   processed: number;
   processes: number;
   storage: Map<string, IProcessingStorage>;
-  usedGroupsTotals: Map<string, number>,
+  usedGroupsTotals: Map<string, number>;
+  batches: Map<string, IBatch>;
 }
 
 type IMachineState = Map<string, IProcessing>;
@@ -641,6 +651,7 @@ function getDefaultProcessingMap(): IProcessing {
     processes: 0,
     storage: new Map(),
     usedGroupsTotals: new Map(),
+    batches: new Map(),
   }
 }
 
@@ -1001,6 +1012,49 @@ export function runMachine$(configuration: IConfiguration) {
         } else {
           throw Error(`NO CONNECTION FOUND WITH KEY ${connectionKey}`);
         }
+      }
+
+      async function sendBatch(group: string, data: ISendData) {
+        const hash = getHash(data.group, data.key);
+        const batch = state.machineState.get(group).batches.get(hash);
+        if (batch.rows.length > 100) {
+          batch.leader = null;
+          batch.spares = [];
+          for (const row of batch.rows) {
+            await sendToServer(
+              batch.leader,
+              {
+                ...row,
+                batchGroup: batch.group,
+                batchId: batch.id,
+                batchIsMap: batch.isMap,
+                batchLeader: batch.leader,
+                batchSpare: batch.spares,
+                batchSize: batch.rows.length,
+              },
+            );
+          }
+          state.machineState.get(group).batches.delete(hash);
+        }
+      }
+
+      async function collectBatch(group: string, data: ISendData) {
+        const hash = getHash(data.group, data.key);
+        let batch = state.machineState.get(group).batches.get(hash);
+        if (!batch) {
+          const id = getId();
+          state.machineState.get(group).batches.set(hash, {
+            id,
+            group,
+            rows: [data],
+            isMap: !data.key,
+            leader: null,
+            spares: [],
+          });
+          batch = state.machineState.get(group).batches.get(hash);
+        }
+        batch.rows.push(data);
+        await this.sendBatch();
       }
 
       async function send({ session, group, stage, key, data }: ISendData) {
