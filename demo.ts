@@ -19,7 +19,7 @@ runMachine$({
     }
   ],
   server: {
-    key: 'local',
+    key: 'local-alt',
     worker: {
       hostname: '0.0.0.0',
       port: 3000,
@@ -66,6 +66,7 @@ runMachine$({
             const minutes = Math.floor(timePassed / 60);
             const seconds = Math.floor(timePassed % 60);
             console.log('Finished!', sum, `${minutes} min`, `${seconds} sec`, `${milliseconds} ms`);
+            process.exit(0);
           },
         ];
       }

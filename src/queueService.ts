@@ -134,10 +134,10 @@ export class QueueService {
 
   public async push(data: string) {
     await this.promiseDiskOperation;
-    if (this.memoryQueue.length > this.memoryLimit) {
+    if (this.memoryQueue.length > this.memoryLimit * 2) {
       [this.promiseDiskOperation, this.resolveDiskOperation] = getPromise();
-      const arr = this.memoryQueue;
-      this.memoryQueue = [data];
+      const arr = this.memoryQueue.slice(this.memoryLimit);
+      this.memoryQueue = [data, ...this.memoryQueue.slice(0, this.memoryLimit)];
       await this.pushToDiskStorage(arr);
       this.resolveDiskOperation();
     } else {
