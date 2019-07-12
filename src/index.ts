@@ -40,6 +40,11 @@ interface IBatch {
   isMap: boolean;
   rows: IDataBase[];
   leader: string;
+  isSent: boolean;
+  isReceived: boolean;
+  isLeader: boolean;
+  isSpare: boolean;
+  isSender: boolean;
   spares: string[];
 }
 
@@ -50,6 +55,7 @@ interface IProcessing {
   storage: Map<string, IProcessingStorage>;
   usedGroupsTotals: Map<string, number>;
   batches: Map<string, IBatch>;
+  connectionCache: Map<string, [string, string[], Promise<void>?, Function?]>
 }
 
 type IMachineState = Map<string, IProcessing>;
@@ -143,6 +149,7 @@ interface ISendData extends IDataBase {
 enum QuestionTypeEnum {
   GET_STAGE_SERVER = 'getStageServer',
   GET_SESSION_STAGE_KEY_SERVER = 'getSessionStageKeyServer',
+  GET_CONNECTION_CACHE = 'getConnectionCache',
   COUNT_PROCESSED = 'countProcessed',
   CAN_GET_STAGE = 'canGetStage',
 }
@@ -652,6 +659,7 @@ function getDefaultProcessingMap(): IProcessing {
     storage: new Map(),
     usedGroupsTotals: new Map(),
     batches: new Map(),
+    connectionCache: new Map(),
   }
 }
 
@@ -721,22 +729,31 @@ export function runMachine$(configuration: IConfiguration) {
     ])),
     map(([state, server, connections]) => {
       state.machineEventListener.onAsk = async (question, data) => {
-        const { session, stage, group, key } = data as {
+        const { session, stage, group, key, hash } = data as {
           session: string;
           group: string;
           stage: string;
           key: string;
+          hash: string;
         };
         switch (question) {
           case QuestionTypeEnum.CAN_GET_STAGE:
             return Object.keys(configuration.server.stages).includes(stage);
+          case QuestionTypeEnum.GET_CONNECTION_CACHE:
+            const machineState = state.machineState.get(group);
+            if (machineState) {
+              const [leaderConnectionKey, sparesConnectionKeys] = machineState.connectionCache.get(hash);
+              return [leaderConnectionKey, sparesConnectionKeys] as IData;
+            } else {
+              return null;
+            }
           case QuestionTypeEnum.COUNT_PROCESSED:
             const map = state.machineState.get(group);
             return map ? map.processed : 0;
           case QuestionTypeEnum.GET_SESSION_STAGE_KEY_SERVER:
-            const hash = getHash(session, stage, key);
-            return state.sessionStageKeyCache.has(hash)
-              && (state.sessionStageKeyCache.get(hash) as ISessionStageKeyCache).connectionKey;
+            const hashCode = getHash(session, stage, key);
+            return state.sessionStageKeyCache.has(hashCode)
+              && (state.sessionStageKeyCache.get(hashCode) as ISessionStageKeyCache).connectionKey;
           case QuestionTypeEnum.GET_STAGE_SERVER:
             return !!configuration.server.stages[stage];
         }
@@ -950,7 +967,7 @@ export function runMachine$(configuration: IConfiguration) {
         return connections;
       }
 
-      async function findStageConnection(stage: string) {
+      async function findStageConnection(stage: string, spareCount: number = 0): Promise<[string, string[]]> {
         let connectionCache = state.connectionCache.get(stage) as IConnectionCache;
         const connectionCachePromise = state.connectionCache.get(stage) as IConnectionCachePromise;
         if (connectionCachePromise && connectionCachePromise.promise) {
@@ -976,9 +993,13 @@ export function runMachine$(configuration: IConfiguration) {
           resolve();
         }
         if (connectionCache.connections) {
-          return connectionCache.connections[
-            Math.floor(Math.random() * connectionCache.connections.length)
-          ];
+          const shuffleConnections = connectionCache.connections
+            .map((a) => ({sort: Math.random(), value: a}))
+            .sort((a, b) => a.sort - b.sort)
+            .map((a) => a.value);
+          const leader = shuffleConnections[0];
+          const spares = shuffleConnections.slice(1, spareCount ? spareCount + 1 : undefined);
+          return [leader, spares];
         }
       }
 
@@ -990,7 +1011,7 @@ export function runMachine$(configuration: IConfiguration) {
         }
 
         if (!connectionKey) {
-          connectionKey = await findStageConnection(stage);
+          [connectionKey] = await findStageConnection(stage);
         }
 
         if (key) {
@@ -1014,32 +1035,115 @@ export function runMachine$(configuration: IConfiguration) {
         }
       }
 
-      async function sendBatch(group: string, data: ISendData) {
-        const hash = getHash(data.group, data.key);
+      async function askConnectionCache({ hash, group }: {hash: string, group: string}): Promise<[string, string[]]> {
+        const machineState = state.machineState.get(group);
+        let leaderConnectionKey: string;
+        let spareConnectionKeys: string[];
+        let [,,promise, resolve] = machineState.connectionCache.get(hash);
+
+        if (promise) {
+          await promise;
+        } else {
+          [promise, resolve] = getPromise();
+          machineState.connectionCache.set(hash, [,,promise, resolve]);
+          const answer = await ask(
+            QuestionTypeEnum.GET_CONNECTION_CACHE,
+            {
+              group,
+              hash,
+            },
+          );
+          [leaderConnectionKey, spareConnectionKeys] = (answer ? answer[0] : []) as any;
+          machineState.connectionCache.set(hash, [leaderConnectionKey, spareConnectionKeys]);
+          resolve();
+        }
+
+        [leaderConnectionKey, spareConnectionKeys] = machineState.connectionCache.get(hash);
+        return [leaderConnectionKey, spareConnectionKeys];
+      }
+
+      async function getConnection({ group, hash, stage, isCached, spareCount }: {
+        group: string;
+        hash: string;
+        stage: string;
+        isCached: boolean;
+        spareCount: number;
+      }): Promise<[string, string[]]> {
+        const machineState = state.machineState.get(group);
+    
+        let leaderConnectionKey: string;
+        let spareConnectionKeys: string[] = [];
+
+        if (isCached) {
+          [leaderConnectionKey, spareConnectionKeys] = machineState.connectionCache.get(hash);
+
+          if (!leaderConnectionKey) {
+            [leaderConnectionKey, spareConnectionKeys] = await askConnectionCache({hash, group});
+          }
+        }
+
+        if (!leaderConnectionKey) {
+          [leaderConnectionKey, spareConnectionKeys] = await findStageConnection(stage, spareCount);
+        }
+
+        if (isCached) {
+          machineState.connectionCache.set(hash, [leaderConnectionKey, spareConnectionKeys]);
+        }
+
+        return [leaderConnectionKey, spareConnectionKeys];
+      }
+
+      async function sendBatch({ hash, group, stage, key }: {hash: string, group: string, stage: string, key: string}) {
         const batch = state.machineState.get(group).batches.get(hash);
+
+        const [leaderConnectionKey, spareConnectionKeys] = await getConnection({
+          hash,
+          group,
+          stage,
+          isCached: !!key,
+          spareCount: 2,
+        });
+
         if (batch.rows.length > 100) {
-          batch.leader = null;
-          batch.spares = [];
+          batch.leader = leaderConnectionKey;
+          batch.spares = spareConnectionKeys;
           for (const row of batch.rows) {
-            await sendToServer(
-              batch.leader,
-              {
-                ...row,
-                batchGroup: batch.group,
-                batchId: batch.id,
-                batchIsMap: batch.isMap,
-                batchLeader: batch.leader,
-                batchSpare: batch.spares,
-                batchSize: batch.rows.length,
-              },
-            );
+            await Promise.all([
+              sendToServer(
+                batch.leader,
+                {
+                  ...row,
+                  batchIsLeader: true,
+                  batchGroup: batch.group,
+                  batchId: batch.id,
+                  batchIsMap: batch.isMap,
+                  batchLeader: batch.leader,
+                  batchSpare: batch.spares,
+                  batchSize: batch.rows.length,
+                },
+              ),
+              ...spareConnectionKeys.map(connectionKey => sendToServer(
+                connectionKey,
+                {
+                  ...row,
+                  batchIsLeader: false,
+                  batchGroup: batch.group,
+                  batchId: batch.id,
+                  batchIsMap: batch.isMap,
+                  batchLeader: batch.leader,
+                  batchSpare: batch.spares,
+                  batchSize: batch.rows.length,
+                },
+              ))
+            ]);
+            batch.isSent = true;
           }
           state.machineState.get(group).batches.delete(hash);
         }
       }
 
       async function collectBatch(group: string, data: ISendData) {
-        const hash = getHash(data.group, data.key);
+        const hash = getHash(data.group, data.key || "");
         let batch = state.machineState.get(group).batches.get(hash);
         if (!batch) {
           const id = getId();
@@ -1049,12 +1153,17 @@ export function runMachine$(configuration: IConfiguration) {
             rows: [data],
             isMap: !data.key,
             leader: null,
+            isSent: false,
+            isLeader: false,
+            isReceived: false,
+            isSender: true,
+            isSpare: false,
             spares: [],
           });
           batch = state.machineState.get(group).batches.get(hash);
         }
         batch.rows.push(data);
-        await this.sendBatch();
+        await sendBatch({hash, group, stage: data.stage, key: data.key});
       }
 
       async function send({ session, group, stage, key, data }: ISendData) {
