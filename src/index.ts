@@ -46,6 +46,9 @@ interface IBatch {
   isSpare: boolean;
   isSender: boolean;
   spares: string[];
+  map: {
+    [key: string]: string;
+  }
 }
 
 interface IProcessing {
@@ -1111,12 +1114,15 @@ export function runMachine$(configuration: IConfiguration) {
         });
         batch.leader = leaderKey;
         batch.spares = spareKeys;
-        await Promise.all(batch.rows.map(row => {
+        batch.rows.forEach(async row => {
           let leaderKey = batch.leader;
-          let spareKeys = batch.spares;
           if (batch.isMap) {
-            leaderKey = allLeaders[Math.floor(Math.random() * allLeaders.length)];
+            batch.map[row.id as string] = allLeaders[Math.floor(Math.random() * allLeaders.length)];
+          } else {
+            batch.map[row.id as string] = leaderKey;
           }
+        });
+        await Promise.all(batch.rows.map((row, index) => {
           return Promise.all([
             sendToServer(
               leaderKey,
@@ -1126,9 +1132,10 @@ export function runMachine$(configuration: IConfiguration) {
                 batchGroup: batch.group,
                 batchId: batch.id,
                 batchIsMap: batch.isMap,
-                batchLeader: leaderKey,
+                batchLeader: batch.leader,
                 batchSpare: spareKeys,
                 batchSize: batch.rows.length,
+                batchMap: {},
               },
             ),
             ...spareKeys.map(spareKey => sendToServer(
@@ -1139,9 +1146,10 @@ export function runMachine$(configuration: IConfiguration) {
                 batchGroup: batch.group,
                 batchId: batch.id,
                 batchIsMap: batch.isMap,
-                batchLeader: leaderKey,
+                batchLeader: batch.leader,
                 batchSpare: spareKeys,
                 batchSize: batch.rows.length,
+                batchMap: index === 0 ? batch.map : {},
               },
             ))
           ]);
@@ -1149,6 +1157,7 @@ export function runMachine$(configuration: IConfiguration) {
       }
 
       async function collectBatch(group: string, data: ISendData) {
+        const messageId = getId();
         const hash = getHash(data.group, data.key || "");
         let batches = state.machineState.get(group).batches.get(hash);
         if (!batches) {
@@ -1161,7 +1170,7 @@ export function runMachine$(configuration: IConfiguration) {
           batch = {
             id,
             group,
-            rows: [data],
+            rows: [],
             isMap: !data.key,
             leader: null,
             isSent: false,
@@ -1170,10 +1179,14 @@ export function runMachine$(configuration: IConfiguration) {
             isSender: true,
             isSpare: false,
             spares: [],
+            map: {},
           };
           batches.push(batch);
         }
-        batch.rows.push(data);
+        batch.rows.push({
+          ...data,
+          id: messageId,
+        });
         if (batch.rows.length > 100) {
           batch.isSent = true;
           await sendBatch({
