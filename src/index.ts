@@ -57,7 +57,7 @@ interface IProcessing {
   processes: number;
   storage: Map<string, IProcessingStorage>;
   usedGroupsTotals: Map<string, number>;
-  batches: Map<string, IBatch[]>;
+  batches: Map<string, Map<string, IBatch>>;
   connectionCache: Map<string, [string, string[], Promise<void>?, Function?]>
 }
 
@@ -1156,6 +1156,14 @@ export function runMachine$(configuration: IConfiguration) {
         }));
       }
 
+      function findNotSetBatch(batches: Map<string, IBatch>) {
+        for (const [key, batch] of batches.entries()) {
+          if (!batch.isSent) {
+            return batch;
+          }
+        }
+      }
+
       function getLastBatch({
         group,
         key,
@@ -1168,7 +1176,7 @@ export function runMachine$(configuration: IConfiguration) {
         if (!batches) {
           return null;
         }
-        const batch = batches.find(b => !b.isSent);
+        const batch = findNotSetBatch(batches);
         return batch;
       }
 
@@ -1220,10 +1228,24 @@ export function runMachine$(configuration: IConfiguration) {
         };
       }) {
         const hash = getHash(batchGroup, key || "");
-        // let batch = state.machineState.get(batchGroup).batches.get(hash).get(batchId);
+        let batch = state.machineState.get(batchGroup).batches.get(hash).get(batchId);
 
-        // if (!batch) {
-        // }
+        if (!batch) {
+          // batch = {
+          //   id: batchId,
+          //   group: batchGroup,
+          //   rows: [],
+          //   isMap: batchIsMap,
+          //   leader: batchLeader,
+          //   isSent: false,
+          //   isLeader: false,
+          //   isReceived: false,
+          //   isSender: true,
+          //   isSpare: false,
+          //   spares: [],
+          //   map: {},
+          // }
+        }
       }
 
       async function collectBatch({
@@ -1239,10 +1261,10 @@ export function runMachine$(configuration: IConfiguration) {
         const hash = getHash(data.group, data.key || "");
         let batches = state.machineState.get(group).batches.get(hash);
         if (!batches) {
-          batches = [];
+          batches = new Map();
           state.machineState.get(group).batches.set(hash, batches);
         }
-        let batch = batches.find(b => !b.isSent);
+        let batch = findNotSetBatch(batches);
         if (!batch) {
           const id = getId();
           batch = {
@@ -1259,7 +1281,7 @@ export function runMachine$(configuration: IConfiguration) {
             spares: [],
             map: {},
           };
-          batches.push(batch);
+          batches.set(id, batch);
         }
         batch.rows.push({
           ...data,
@@ -1274,7 +1296,7 @@ export function runMachine$(configuration: IConfiguration) {
             stage: data.stage,
             isReduce: !!data.key,
           });
-          // state.machineState.get(group).batches.get(hash).delete(batch.id);
+          state.machineState.get(group).batches.get(hash).delete(batch.id);
         }
       }
 
