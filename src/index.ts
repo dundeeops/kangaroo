@@ -1098,18 +1098,18 @@ export function runMachine$(configuration: IConfiguration) {
         return [leaderKey, spareKeys, leaderKeys];
       }
 
-      async function sendBatch({ hash, batch, group, stage, isCached }: {
+      async function sendBatch({ hash, batch, group, stage, isReduce }: {
         hash: string;
         batch: IBatch;
         group: string;
         stage: string;
-        isCached: boolean;
+        isReduce: boolean;
       }) {
         const [leaderKey, spareKeys, allLeaders] = await getConnection({
           hash,
           group,
           stage,
-          isCached,
+          isCached: isReduce,
           spareCount: 2,
         });
         batch.leader = leaderKey;
@@ -1156,7 +1156,55 @@ export function runMachine$(configuration: IConfiguration) {
         }));
       }
 
-      async function collectBatch(group: string, data: ISendData) {
+      function getLastBatch({
+        group,
+        key,
+      }: {
+        group: string;
+        key: string;
+      }) {
+        const hash = getHash(group, key || "");
+        const batches = state.machineState.get(group).batches.get(hash);
+        if (!batches) {
+          return null;
+        }
+        const batch = batches.find(b => !b.isSent);
+        return batch;
+      }
+
+      async function trySendLastBatch({
+        stage,
+        group,
+        key,
+      }: {
+        stage: string;
+        group: string;
+        key: string;
+      }) {
+        const hash = getHash(group, key || "");
+        const batch = getLastBatch({group, key});
+        if (batch) {
+          batch.isSent = true;
+          await sendBatch({
+            hash,
+            batch,
+            group,
+            stage: stage,
+            isReduce: !!key,
+          });
+          state.machineState.get(group).batches.delete(hash);
+        }
+      }
+
+      async function collectBatch({
+        group,
+        data,
+        isLast,
+      }: {
+        group: string;
+        data: ISendData;
+        isLast: boolean;
+      }) {
         const messageId = getId();
         const hash = getHash(data.group, data.key || "");
         let batches = state.machineState.get(group).batches.get(hash);
@@ -1187,14 +1235,14 @@ export function runMachine$(configuration: IConfiguration) {
           ...data,
           id: messageId,
         });
-        if (batch.rows.length > 100) {
+        if (isLast || batch.rows.length > 100) {
           batch.isSent = true;
           await sendBatch({
             hash,
             batch,
             group,
             stage: data.stage,
-            isCached: !!data.key,
+            isReduce: !!data.key,
           });
           state.machineState.get(group).batches.delete(hash);
         }
