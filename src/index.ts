@@ -1192,8 +1192,38 @@ export function runMachine$(configuration: IConfiguration) {
             stage: stage,
             isReduce: !!key,
           });
-          state.machineState.get(group).batches.delete(hash);
+          // state.machineState.get(group).batches.get(hash).delete(batch.id);
         }
+      }
+
+      function catchBatch({
+        key,
+        batchIsLeader,
+        batchGroup,
+        batchId,
+        batchIsMap,
+        batchLeader,
+        batchSpare,
+        batchSize,
+        batchMap,
+      }: {
+        key: string;
+        batchIsLeader: boolean;
+        batchGroup: string;
+        batchId: string;
+        batchIsMap: string;
+        batchLeader: string;
+        batchSpare: string;
+        batchSize: number;
+        batchMap: {
+          [id: string]: string;
+        };
+      }) {
+        const hash = getHash(batchGroup, key || "");
+        // let batch = state.machineState.get(batchGroup).batches.get(hash).get(batchId);
+
+        // if (!batch) {
+        // }
       }
 
       async function collectBatch({
@@ -1244,7 +1274,7 @@ export function runMachine$(configuration: IConfiguration) {
             stage: data.stage,
             isReduce: !!data.key,
           });
-          state.machineState.get(group).batches.delete(hash);
+          // state.machineState.get(group).batches.get(hash).delete(batch.id);
         }
       }
 
