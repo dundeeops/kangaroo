@@ -1134,6 +1134,7 @@ export function runMachine$(configuration: IConfiguration) {
                 batchIsMap: batch.isMap,
                 batchLeader: batch.leader,
                 batchSpare: spareKeys,
+                batchSpares: batch.spares,
                 batchSize: batch.rows.length,
                 batchMap: {},
               },
@@ -1148,6 +1149,7 @@ export function runMachine$(configuration: IConfiguration) {
                 batchIsMap: batch.isMap,
                 batchLeader: batch.leader,
                 batchSpare: spareKeys,
+                batchSpares: batch.spares,
                 batchSize: batch.rows.length,
                 batchMap: index === 0 ? batch.map : {},
               },
@@ -1200,51 +1202,47 @@ export function runMachine$(configuration: IConfiguration) {
             stage: stage,
             isReduce: !!key,
           });
-          // state.machineState.get(group).batches.get(hash).delete(batch.id);
+          state.machineState.get(group).batches.get(hash).delete(batch.id);
         }
       }
 
-      function catchBatch({
-        key,
-        batchIsLeader,
-        batchGroup,
-        batchId,
-        batchIsMap,
-        batchLeader,
-        batchSpare,
-        batchSize,
-        batchMap,
-      }: {
+      function catchBatch(data: {
         key: string;
         batchIsLeader: boolean;
         batchGroup: string;
         batchId: string;
-        batchIsMap: string;
+        batchIsMap: boolean;
         batchLeader: string;
-        batchSpare: string;
+        batchSpare: boolean;
+        batchSpares: string[];
         batchSize: number;
         batchMap: {
           [id: string]: string;
         };
       }) {
-        const hash = getHash(batchGroup, key || "");
-        let batch = state.machineState.get(batchGroup).batches.get(hash).get(batchId);
-
+        const hash = getHash(data.batchGroup, data.key || "");
+        if (!state.machineState.get(data.batchGroup).batches.get(hash)) {
+          state.machineState.get(data.batchGroup).batches.set(hash, new Map());
+        }
+        let batch = state.machineState.get(data.batchGroup).batches.get(hash).get(data.batchId);
         if (!batch) {
-          // batch = {
-          //   id: batchId,
-          //   group: batchGroup,
-          //   rows: [],
-          //   isMap: batchIsMap,
-          //   leader: batchLeader,
-          //   isSent: false,
-          //   isLeader: false,
-          //   isReceived: false,
-          //   isSender: true,
-          //   isSpare: false,
-          //   spares: [],
-          //   map: {},
-          // }
+          batch = {
+            id: data.batchId,
+            group: data.batchGroup,
+            rows: [
+              data,
+            ],
+            isMap: data.batchIsMap,
+            leader: data.batchLeader,
+            isSent: true,
+            isLeader: data.batchIsLeader,
+            isReceived: true,
+            isSender: false,
+            isSpare: data.batchSpare,
+            spares: data.batchSpares,
+            map: data.batchMap,
+          }
+          state.machineState.get(data.batchGroup).batches.get(hash).set(data.batchId, batch);
         }
       }
 
