@@ -1,22 +1,27 @@
 {
   "name": "kangaroo",
-  "version": "1.0.0",
+  "version": "1.0.0a",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dundeeops/kangaroo.git"
+  },
   "private": false,
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
+    "demo": "ts-node ./demo.ts",
     "test": "jest"
   },
   "devDependencies": {
+    "@types/node": "13.5.0",
     "js-yaml": "3.13.1",
-    "yargs": "13.3.0",
-    "jest": "24.8.0",
-    "ts-node": "8.3.0",
-    "typescript": "3.5.3"
+    "yargs": "15.1.0",
+    "jest": "25.1.0",
+    "ts-node": "8.6.2",
+    "typescript": "3.7.5"
   },
   "dependencies": {
-    "@types/node": "12.7.1",
-    "rxjs": "6.5.2",
+    "rxjs": "6.5.4",
     "net": "1.0.2",
     "crypto": "1.0.1",
     "path": "0.12.7",
